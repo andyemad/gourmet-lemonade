@@ -4,17 +4,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { PACKAGES } from "@/lib/types";
 import type { Order } from "@/lib/types";
 
-interface CodeStats {
-  total: number;
-  used: number;
-  remaining: number;
-}
-
 export default function AdminPage() {
   const [orders, setOrders] = useState<Order[]>([]);
-  const [codeStats, setCodeStats] = useState<CodeStats | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [newCodes, setNewCodes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const prevOrderCount = useRef(0);
 
@@ -27,20 +18,11 @@ export default function AdminPage() {
     } catch {}
   }, []);
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/codes");
-      const data = await res.json();
-      setCodeStats(data);
-    } catch {}
-  }, []);
-
   useEffect(() => {
     fetchOrders();
-    fetchStats();
     const interval = setInterval(fetchOrders, 5000);
     return () => clearInterval(interval);
-  }, [fetchOrders, fetchStats]);
+  }, [fetchOrders]);
 
   // Sound alert on new orders
   useEffect(() => {
@@ -69,22 +51,6 @@ export default function AdminPage() {
     prevOrderCount.current = newCount;
   }, [orders]);
 
-  const generateCodes = async () => {
-    setGenerating(true);
-    try {
-      const res = await fetch("/api/admin/codes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ count: 10 }),
-      });
-      const data = await res.json();
-      setNewCodes(data.codes);
-      fetchStats();
-    } catch {} finally {
-      setGenerating(false);
-    }
-  };
-
   const updateStatus = async (id: string, status: string) => {
     await fetch("/api/admin/orders", {
       method: "PATCH",
@@ -111,56 +77,12 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-stone-900 p-4 md:p-8">
       <div className="max-w-2xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-amber-400 font-mono">🍋 Orders</h1>
-            <p className="text-stone-500 text-sm">
-              {newOrders.length} new order{newOrders.length !== 1 ? "s" : ""}
-            </p>
-          </div>
-
-          {/* Code management */}
-          <div className="text-right">
-            {codeStats && (
-              <p className="text-stone-400 text-xs mb-2">
-                {codeStats.remaining} codes remaining / {codeStats.total} total
-              </p>
-            )}
-            <button
-              onClick={generateCodes}
-              disabled={generating}
-              className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-amber-500 disabled:opacity-50"
-            >
-              {generating ? "Generating..." : "Generate 10 Codes"}
-            </button>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-amber-400 font-mono">🍋 Orders</h1>
+          <p className="text-stone-500 text-sm">
+            {newOrders.length} new order{newOrders.length !== 1 ? "s" : ""}
+          </p>
         </div>
-
-        {/* New codes display */}
-        {newCodes.length > 0 && (
-          <div className="bg-stone-800 border border-amber-500 rounded-lg p-4 mb-6">
-            <h3 className="text-amber-400 font-mono text-sm mb-2">New Codes (copy these):</h3>
-            <div className="flex flex-wrap gap-2">
-              {newCodes.map((code) => (
-                <code
-                  key={code}
-                  className="bg-stone-700 text-white px-3 py-1 rounded text-sm font-mono"
-                >
-                  {code}
-                </code>
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(newCodes.join("\n"));
-                setNewCodes([]);
-              }}
-              className="mt-3 text-xs text-amber-400 hover:text-amber-300"
-            >
-              Copy all & dismiss
-            </button>
-          </div>
-        )}
 
         {/* Orders list */}
         {loading ? (
@@ -170,7 +92,7 @@ export default function AdminPage() {
             <p className="text-6xl mb-4">🍋</p>
             <p className="text-stone-400">No orders yet</p>
             <p className="text-stone-500 text-sm mt-1">
-              Generate codes and share the game URL with your customers
+              Share the game URL with your customers
             </p>
           </div>
         ) : (

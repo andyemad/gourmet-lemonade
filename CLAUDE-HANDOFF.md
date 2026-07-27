@@ -12,8 +12,9 @@ A gamified ordering system for a gourmet lemonade business. Instead of a form,
 customers walk a pixel-art character up to a lemonade stand in a living scene,
 pick flavors, and place real orders. The seller sees incoming orders at `/admin`.
 
-The code gate is disabled — the site opens straight to the game. The code
-generation system still exists in the admin panel if you want to gate access.
+There is no access gate — the site opens straight to the game, for anyone with
+the URL. The one-time-code system was removed on 2026-07-27 (see Removed
+Features); recover it from git history if the business ever wants it back.
 
 ---
 
@@ -43,7 +44,8 @@ The core idea: **the game IS the business interface, not a skin on a form.**
 - **Next.js 16.2** (App Router, Turbopack, TypeScript)
 - **KAPLAY 3001** — migrated off the deprecated Kaboom.js
 - **Tailwind CSS 4** for the menus and admin panel
-- **Vercel KV** for storage, falling back to an in-memory Map (see Known Issues)
+- **Storage:** currently the in-memory Map fallback in `lib/kv.ts` — no real
+  store is connected yet (see Known Issues)
 - **No image files.** Every sprite is generated as real pixel art at runtime.
 
 ---
@@ -55,13 +57,12 @@ app/
   page.tsx              — Game page + order flow state machine
   layout.tsx            — Fonts (Geist + Press Start 2P) and metadata
   globals.css           — Tailwind theme, in-game panel chrome, canvas sizing
-  admin/page.tsx        — Admin dashboard (generate codes, view orders)
-  api/                  — order, validate-code, admin/codes, admin/orders
+  admin/page.tsx        — Admin dashboard (view orders, advance status)
+  api/                  — order, admin/orders
 
 components/
   Game.tsx              — KAPLAY scene: parallax, y-sorting, tap-to-move, camera
   Modals.tsx            — Order flow panels (package → flavor → ETA → confirm → success)
-  CodeGate.tsx          — Code entry screen (unused, kept for later)
 
 lib/art/
   pixel.ts              — Painter: character-grid art → canvas; strip/mirror/stack/dither
@@ -71,7 +72,7 @@ lib/art/
   index.ts              — buildArt(): every canvas the game loads
 
 lib/
-  types.ts, orders.ts, codes.ts, kv.ts, sounds.ts
+  types.ts, orders.ts, kv.ts, sounds.ts
 ```
 
 ---
@@ -143,10 +144,16 @@ ink-outlined chrome.
 
 ## Known Issues / Gotchas
 
-1. **KV storage.** Vercel KV is deprecated; the app falls back to an in-memory
-   Map, and on serverless each instance has its own. Orders can vanish between
-   requests. Fix by connecting a KV store or Upstash Redis and setting
-   `KV_URL`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN`.
+1. **Storage is in-memory in production.** `lib/kv.ts` only uses a real store
+   when `KV_URL` / `KV_REST_API_URL` is set — and as of 2026-07-27 the Vercel
+   project has **no env vars at all** (`vercel env ls` is empty). So it always
+   takes the in-memory Map branch, and on serverless each instance has its own.
+   Orders can vanish between requests. Worse, it degrades *silently* — a
+   `console.warn` and nothing else, so the site looks healthy.
+
+   Do **not** follow the old advice to set the four `KV_*` vars: Vercel KV has
+   been retired and the marketplace provisions `UPSTASH_REDIS_REST_*` instead.
+   See Open Thread #1 for the current path.
 
 2. **KAPLAY's pointer mapping ignores CSS scaling.** It computes
    `(clientX - rect.left) / scale`, which is only right when the canvas is
@@ -191,22 +198,69 @@ order:
    and reliably taking real orders. Orders currently live in an in-memory Map,
    and on Vercel each serverless instance has its own, so an order can be
    written by one instance and be invisible to the admin panel served by
-   another. Connect a KV store or Upstash Redis and set the four `KV_*` env
-   vars listed in Known Issues. Needs Emad to create the store in the Vercel
-   dashboard.
-2. **Decide on the code gate.** `CodeGate.tsx` and the whole access-code system
-   are built and working but unwired — the site opens straight to the game.
-   Either wire it back up or delete it; leaving it half-connected invites
-   confusion.
+   another.
+
+   **The original instructions here were wrong and cost nothing to correct:**
+   Vercel KV has been retired as a product, so "create a KV store and set the
+   four `KV_*` env vars" no longer describes anything real. The path today is
+   **Upstash Redis via the Vercel Marketplace** (`vercel integration add
+   upstash`, or the dashboard), which provisions `UPSTASH_REDIS_REST_URL` /
+   `UPSTASH_REDIS_REST_TOKEN` — *not* `KV_*`. That means `lib/kv.ts` also needs
+   its `@vercel/kv` import swapped for `@upstash/redis` and its env check
+   updated, or it will silently keep using the in-memory Map. Only `orders.ts`
+   consumes `kv` now, so the blast radius is one file.
+
+   While changing it, make production **fail loudly** instead of falling back:
+   the silent `console.warn` at `lib/kv.ts` is why the site looks healthy while
+   dropping orders. Needs Emad to create the store — it bills to his account.
+2. ~~**Decide on the code gate.**~~ Done 2026-07-27 — removed. See Removed
+   Features below.
 3. **Pre-existing lint errors** in `app/admin/page.tsx` (setState inside an
    effect) and `lib/kv.ts` (`any` types). Deliberately untouched — they predate
    the art work and are unrelated to it.
-4. **The admin panel never got the game treatment.** It's still the original
+4. **`Order.code` is misnamed.** It carries the `GUEST-xxxxx` session id from
+   `page.tsx`, not an access code — a leftover from the gate. Renaming it to
+   `sessionId` would touch `types.ts`, `orders.ts`, `page.tsx` and the order
+   route. Left alone deliberately; cheapest to do before real storage exists.
+5. **The admin panel never got the game treatment.** It's still the original
    Tailwind styling while the customer side is now pixel art. Fine as-is (it's
    an internal tool), but it's the obvious next visual step if Emad wants it.
-5. **Possible depth work**, only if asked: a day/night tint, more NPC bodies
+6. **Possible depth work**, only if asked: a day/night tint, more NPC bodies
    (currently one silhouette with palette swaps), or the tycoon-progression
    angle from the source tweet — none of it requested yet.
+
+---
+
+## Removed Features
+
+### One-time access codes (removed 2026-07-27)
+
+Customers used to need a 6-character code to reach the ordering flow. Commit
+`f573432` unwired it from the customer side; the rest was deleted on
+2026-07-27. Gone: `components/CodeGate.tsx`, `lib/codes.ts`,
+`app/api/validate-code/`, `app/api/admin/codes/`, the `AccessCode` type, the
+admin panel's generate/stats UI, and the now-orphaned set operations
+(`sadd`/`smembers`) in `lib/kv.ts`.
+
+**Why deleting beat wiring it back up** — worth knowing before anyone restores
+it:
+
+- **It could not have worked.** `lib/codes.ts` stored codes through the same
+  `kv` wrapper as orders, which in production is the per-instance in-memory
+  Map. The seller generates codes on one instance; the customer's
+  `/api/validate-code` request lands on another with an empty Map and gets
+  "Invalid code". A wired gate would have blocked paying customers outright —
+  strictly worse than the orders bug, which at least fails quietly. **Any
+  revival is blocked on Open Thread #1.**
+- **The component had no salvage value.** `CodeGate.tsx` was in the pre-art
+  Tailwind style (stone/amber, `rounded-xl`, 🍋 emoji) while the customer side
+  is now authored pixel art in wooden panels. It would have been rewritten, not
+  reused.
+- **The admin panel was advertising a dead feature** — "Generate codes and share
+  the game URL with your customers" — so the seller could hand out codes that
+  did nothing.
+
+Recover the whole system from git history if the business ever wants a gate.
 
 ---
 

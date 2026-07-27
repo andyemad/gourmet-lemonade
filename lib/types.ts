@@ -39,10 +39,3 @@ export interface Order {
   status: "new" | "prepping" | "ready" | "picked_up";
   createdAt: number;
 }
-
-export interface AccessCode {
-  code: string;
-  used: boolean;
-  usedAt: number | null;
-  createdAt: number;
-}
