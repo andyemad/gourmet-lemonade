@@ -24,12 +24,27 @@ export default function Game({ accessCode: _accessCode }: { accessCode: string }
 
     // ── Load sprites ──
     k.loadSprite("player-idle", sprites.playerIdle);
-    k.loadSprite("player-walk-down", sprites.playerWalkDown, { sliceX: 4 });
-    k.loadSprite("player-walk-up", sprites.playerWalkUp, { sliceX: 4 });
-    k.loadSprite("player-walk-left", sprites.playerWalkLeft, { sliceX: 4 });
-    k.loadSprite("player-walk-right", sprites.playerWalkRight, { sliceX: 4 });
+    k.loadSprite("player-walk-down", sprites.playerWalkDown, {
+      sliceX: 4,
+      anims: { walk: { from: 0, to: 3, loop: true, speed: 8 } },
+    });
+    k.loadSprite("player-walk-up", sprites.playerWalkUp, {
+      sliceX: 4,
+      anims: { walk: { from: 0, to: 3, loop: true, speed: 8 } },
+    });
+    k.loadSprite("player-walk-left", sprites.playerWalkLeft, {
+      sliceX: 4,
+      anims: { walk: { from: 0, to: 3, loop: true, speed: 8 } },
+    });
+    k.loadSprite("player-walk-right", sprites.playerWalkRight, {
+      sliceX: 4,
+      anims: { walk: { from: 0, to: 3, loop: true, speed: 8 } },
+    });
     sprites.npcs.forEach((sprite, i) => {
-      k.loadSprite(`npc-${i}`, sprite, { sliceX: 4 });
+      k.loadSprite(`npc-${i}`, sprite, {
+        sliceX: 4,
+        anims: { walk: { from: 0, to: 3, loop: true, speed: 6 } },
+      });
     });
     k.loadSprite("dog", sprites.dog);
 
@@ -144,10 +159,10 @@ export default function Game({ accessCode: _accessCode }: { accessCode: string }
         currentAnim = anim;
         switch (anim) {
           case "idle": player.use(k.sprite("player-idle")); break;
-          case "walk-down": player.use(k.sprite("player-walk-down", { anim: "walk", animSpeed: 8 })); break;
-          case "walk-up": player.use(k.sprite("player-walk-up", { anim: "walk", animSpeed: 8 })); break;
-          case "walk-left": player.use(k.sprite("player-walk-left", { anim: "walk", animSpeed: 8 })); break;
-          case "walk-right": player.use(k.sprite("player-walk-right", { anim: "walk", animSpeed: 8 })); break;
+          case "walk-down": player.use(k.sprite("player-walk-down", { anim: "walk" })); break;
+          case "walk-up": player.use(k.sprite("player-walk-up", { anim: "walk" })); break;
+          case "walk-left": player.use(k.sprite("player-walk-left", { anim: "walk" })); break;
+          case "walk-right": player.use(k.sprite("player-walk-right", { anim: "walk" })); break;
         }
       }
 
@@ -224,7 +239,7 @@ export default function Game({ accessCode: _accessCode }: { accessCode: string }
       // ── NPCS ──
       for (let i = 0; i < 3; i++) {
         const npc = k.add([
-          k.sprite(`npc-${i}`, { anim: "walk", animSpeed: 6 }),
+          k.sprite(`npc-${i}`, { anim: "walk" }),
           k.pos(100 + i * 120, k.height() - 115),
           k.area({ scale: 0.6 }),
           k.body(),
