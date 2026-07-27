@@ -12,6 +12,7 @@ import {
 } from "@/components/Modals";
 import type { PackageTier, FlavorAssignment } from "@/lib/types";
 import { PACKAGES } from "@/lib/types";
+import { playClick, playConfirm, playSuccess, playError } from "@/lib/sounds";
 
 type Step =
   | "code"
@@ -42,7 +43,10 @@ export default function Home() {
 
   // Listen for game events
   useEffect(() => {
-    const handler = () => setStep("package");
+    const handler = () => {
+      playConfirm();
+      setStep("package");
+    };
     window.addEventListener("open-package-modal", handler);
     return () => window.removeEventListener("open-package-modal", handler);
   }, []);
@@ -88,11 +92,13 @@ export default function Home() {
       if (data.success) {
         setOrderId(data.orderId);
         setStep("success");
+        playSuccess();
         // Trigger celebration particles
         try {
           (window as any).__celebrateLemonade?.();
         } catch {}
       } else {
+        playError();
         alert(data.error || "Failed to place order");
       }
     } catch {
@@ -103,12 +109,16 @@ export default function Home() {
   }, [selectedPkg, flavors, eta, accessCode]);
 
   const handleDone = useCallback(() => {
-    sessionStorage.removeItem("lemonade_code");
+    // Full wipe — no trace left for the customer
+    sessionStorage.clear();
+    localStorage.removeItem("lemonade_code");
     setStep("code");
+    setAccessCode("");
     setSelectedPkg(null);
     setFlavors([]);
     setEta("");
     setOrderId("");
+    setLoading(false);
   }, []);
 
   const pkgGlasses = selectedPkg
@@ -122,9 +132,9 @@ export default function Home() {
     <>
       {step === "code" && <CodeGate onValidCode={handleValidCode} />}
 
-      {step !== "code" && (
+      {step !== "code" && step !== "success" && (
         <main className="min-h-screen bg-stone-900 flex flex-col items-center justify-center p-4">
-          <h1 className="text-2xl font-bold text-amber-400 font-mono mb-1">
+          <h1 className="text-2xl font-bold text-amber-400 font-mono mb-1 pixelated">
             🍋 Gourmet Lemonade
           </h1>
           <p className="text-stone-500 text-xs mb-4">
@@ -163,15 +173,16 @@ export default function Home() {
             onBack={() => setStep("eta")}
             loading={loading}
           />
-
-          <SuccessModal
-            isOpen={step === "success"}
-            orderId={orderId}
-            eta={eta}
-            onDone={handleDone}
-          />
         </main>
       )}
+
+      {/* Success modal renders on its own — game is fully unmounted */}
+      <SuccessModal
+        isOpen={step === "success"}
+        orderId={orderId}
+        eta={eta}
+        onDone={handleDone}
+      />
     </>
   );
 }
