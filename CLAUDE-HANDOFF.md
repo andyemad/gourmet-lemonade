@@ -182,6 +182,34 @@ ink-outlined chrome.
 
 ---
 
+## Open Threads / Next Steps
+
+Nothing here is blocking — the site is live and takes orders — but in priority
+order:
+
+1. **Connect real storage.** This is the only thing standing between the site
+   and reliably taking real orders. Orders currently live in an in-memory Map,
+   and on Vercel each serverless instance has its own, so an order can be
+   written by one instance and be invisible to the admin panel served by
+   another. Connect a KV store or Upstash Redis and set the four `KV_*` env
+   vars listed in Known Issues. Needs Emad to create the store in the Vercel
+   dashboard.
+2. **Decide on the code gate.** `CodeGate.tsx` and the whole access-code system
+   are built and working but unwired — the site opens straight to the game.
+   Either wire it back up or delete it; leaving it half-connected invites
+   confusion.
+3. **Pre-existing lint errors** in `app/admin/page.tsx` (setState inside an
+   effect) and `lib/kv.ts` (`any` types). Deliberately untouched — they predate
+   the art work and are unrelated to it.
+4. **The admin panel never got the game treatment.** It's still the original
+   Tailwind styling while the customer side is now pixel art. Fine as-is (it's
+   an internal tool), but it's the obvious next visual step if Emad wants it.
+5. **Possible depth work**, only if asked: a day/night tint, more NPC bodies
+   (currently one silhouette with palette swaps), or the tycoon-progression
+   angle from the source tweet — none of it requested yet.
+
+---
+
 ## Business Owner Notes
 
 - Real customer orders — fun matters, but the ordering must stay clear.
