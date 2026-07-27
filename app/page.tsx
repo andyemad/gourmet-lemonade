@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Game from "@/components/Game";
-import CodeGate from "@/components/CodeGate";
 import {
   PackageModal,
   FlavorModal,
@@ -14,32 +13,26 @@ import type { PackageTier, FlavorAssignment } from "@/lib/types";
 import { PACKAGES } from "@/lib/types";
 import { playClick, playConfirm, playSuccess, playError } from "@/lib/sounds";
 
-type Step =
-  | "code"
-  | "game"
-  | "package"
-  | "flavor"
-  | "eta"
-  | "confirm"
-  | "success";
+type Step = "game" | "package" | "flavor" | "eta" | "confirm" | "success";
+
+// Generate a session identifier for order tracking (no auth required)
+function sessionId(): string {
+  if (typeof window === "undefined") return "GUEST-SSR";
+  let id = sessionStorage.getItem("lemonade_session");
+  if (!id) {
+    id = "GUEST-" + Date.now().toString(36).toUpperCase();
+    sessionStorage.setItem("lemonade_session", id);
+  }
+  return id;
+}
 
 export default function Home() {
-  const [step, setStep] = useState<Step>("code");
-  const [accessCode, setAccessCode] = useState<string>("");
+  const [step, setStep] = useState<Step>("game");
   const [selectedPkg, setSelectedPkg] = useState<PackageTier | null>(null);
   const [flavors, setFlavors] = useState<FlavorAssignment[]>([]);
   const [eta, setEta] = useState<string>("");
   const [orderId, setOrderId] = useState<string>("");
   const [loading, setLoading] = useState(false);
-
-  // Check if already authenticated
-  useEffect(() => {
-    const saved = sessionStorage.getItem("lemonade_code");
-    if (saved) {
-      setAccessCode(saved);
-      setStep("game");
-    }
-  }, []);
 
   // Listen for game events
   useEffect(() => {
@@ -51,28 +44,26 @@ export default function Home() {
     return () => window.removeEventListener("open-package-modal", handler);
   }, []);
 
-  const handleValidCode = useCallback((code: string) => {
-    setAccessCode(code);
-    setStep("game");
-  }, []);
-
   const handleSelectPackage = useCallback((pkg: PackageTier) => {
+    playClick();
     setSelectedPkg(pkg);
     setStep("flavor");
   }, []);
 
   const handleConfirmFlavors = useCallback((assignments: FlavorAssignment[]) => {
+    playClick();
     setFlavors(assignments);
     setStep("eta");
   }, []);
 
   const handleConfirmEta = useCallback((etaVal: string) => {
+    playClick();
     setEta(etaVal);
     setStep("confirm");
   }, []);
 
   const handleSubmitOrder = useCallback(async () => {
-    if (!selectedPkg || !flavors.length || !eta || !accessCode) return;
+    if (!selectedPkg || !flavors.length || !eta) return;
 
     setLoading(true);
     try {
@@ -80,7 +71,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          code: accessCode,
+          code: sessionId(),
           package: selectedPkg,
           flavors,
           eta,
@@ -93,7 +84,6 @@ export default function Home() {
         setOrderId(data.orderId);
         setStep("success");
         playSuccess();
-        // Trigger celebration particles
         try {
           (window as any).__celebrateLemonade?.();
         } catch {}
@@ -106,14 +96,12 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [selectedPkg, flavors, eta, accessCode]);
+  }, [selectedPkg, flavors, eta]);
 
   const handleDone = useCallback(() => {
-    // Full wipe — no trace left for the customer
+    // Full wipe, back to game
     sessionStorage.clear();
-    localStorage.removeItem("lemonade_code");
-    setStep("code");
-    setAccessCode("");
+    setStep("game");
     setSelectedPkg(null);
     setFlavors([]);
     setEta("");
@@ -130,18 +118,16 @@ export default function Home() {
 
   return (
     <>
-      {step === "code" && <CodeGate onValidCode={handleValidCode} />}
-
-      {step !== "code" && step !== "success" && (
+      {step !== "success" && (
         <main className="min-h-screen bg-stone-900 flex flex-col items-center justify-center p-4">
-          <h1 className="text-2xl font-bold text-amber-400 font-mono mb-1 pixelated">
+          <h1 className="text-2xl font-bold text-amber-400 font-mono mb-1">
             🍋 Gourmet Lemonade
           </h1>
           <p className="text-stone-500 text-xs mb-4">
             Walk up to the stand → Press SPACE → Order
           </p>
 
-          {step === "game" && <Game accessCode={accessCode} />}
+          {step === "game" && <Game accessCode={sessionId()} />}
 
           <PackageModal
             isOpen={step === "package"}
@@ -176,7 +162,6 @@ export default function Home() {
         </main>
       )}
 
-      {/* Success modal renders on its own — game is fully unmounted */}
       <SuccessModal
         isOpen={step === "success"}
         orderId={orderId}
