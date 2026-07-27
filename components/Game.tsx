@@ -1,421 +1,480 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import kaboom from "kaboom";
-import { generateAllSprites } from "@/lib/sprites";
-import { FLAVORS } from "@/lib/types";
+import { useEffect, useRef } from "react";
+import kaplay from "kaplay";
+import type { KAPLAYCtx, GameObj } from "kaplay";
+import { buildArt, HORIZON, VIEW_H, VIEW_W, WORLD_W } from "@/lib/art";
 
-export default function Game({ accessCode: _accessCode }: { accessCode: string }) {
+/** Ground line the player's feet walk between. */
+const WALK_TOP = HORIZON + 26;
+const WALK_BOTTOM = VIEW_H - 12;
+const STAND_X = WORLD_W / 2;
+const STAND_BASE_Y = 186;
+/** Where the player ends up when they tap the stand. */
+const COUNTER_SPOT = { x: STAND_X, y: 208 };
+const SPEED = 78;
+
+export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    const sprites = generateAllSprites();
-
-    const k = kaboom({
-      canvas: canvasRef.current,
-      width: 480,
-      height: 360,
-      scale: 2,
+    const art = buildArt();
+    // Scopes the canvas pointer listener so it dies with the component.
+    const input = new AbortController();
+    const k = kaplay({
+      canvas,
+      width: VIEW_W,
+      height: VIEW_H,
+      scale: 3,
       crisp: true,
-      background: [135, 206, 235],
+      background: [122, 190, 216],
+      global: false,
     });
 
-    // ── Load sprites ──
-    k.loadSprite("player-idle", sprites.playerIdle);
-    k.loadSprite("player-walk-down", sprites.playerWalkDown, {
-      sliceX: 4,
-      anims: { walk: { from: 0, to: 3, loop: true, speed: 8 } },
+    const WALK = { from: 0, to: 3, loop: true, speed: 9 };
+    k.loadSprite("player-down", art.playerDown, { sliceX: 4, anims: { walk: WALK } });
+    k.loadSprite("player-up", art.playerUp, { sliceX: 4, anims: { walk: WALK } });
+    k.loadSprite("player-side", art.playerSide, { sliceX: 4, anims: { walk: WALK } });
+    k.loadSprite("player-idle", art.playerIdleDown);
+    art.npcs.forEach((sheet, i) =>
+      k.loadSprite(`npc-${i}`, sheet, { sliceX: 4, anims: { walk: { ...WALK, speed: 6 + i } } }),
+    );
+    k.loadSprite("dog", art.dog, {
+      sliceX: 2,
+      anims: { wag: { from: 0, to: 1, loop: true, speed: 4 } },
     });
-    k.loadSprite("player-walk-up", sprites.playerWalkUp, {
-      sliceX: 4,
-      anims: { walk: { from: 0, to: 3, loop: true, speed: 8 } },
-    });
-    k.loadSprite("player-walk-left", sprites.playerWalkLeft, {
-      sliceX: 4,
-      anims: { walk: { from: 0, to: 3, loop: true, speed: 8 } },
-    });
-    k.loadSprite("player-walk-right", sprites.playerWalkRight, {
-      sliceX: 4,
-      anims: { walk: { from: 0, to: 3, loop: true, speed: 8 } },
-    });
-    sprites.npcs.forEach((sprite, i) => {
-      k.loadSprite(`npc-${i}`, sprite, {
-        sliceX: 4,
-        anims: { walk: { from: 0, to: 3, loop: true, speed: 6 } },
-      });
-    });
-    k.loadSprite("dog", sprites.dog);
+    k.loadSprite("sky", art.sky);
+    k.loadSprite("clouds", art.clouds);
+    k.loadSprite("hills", art.hills);
+    k.loadSprite("treeline", art.treeline);
+    k.loadSprite("ground", art.ground);
+    k.loadSprite("fringe", art.fringe);
+    k.loadSprite("stand", art.stand.canvas);
+    k.loadSprite("tree", art.tree);
+    k.loadSprite("bush", art.bush);
+    k.loadSprite("fence", art.fence);
+    k.loadSprite("sign", art.sign);
+    k.loadSprite("barrel", art.barrel);
+    k.loadSprite("shadow", art.shadow);
+    k.loadSprite("tap-marker", art.tapMarker);
 
-    // ── Main scene ──
     k.scene("main", () => {
-      // Backdrop
-      k.add([k.rect(480, 360), k.pos(0, 0), k.color(135, 206, 235), k.z(-10)]);
+      // ── Parallax backdrop ──
+      // Each layer is screen-fixed and repositioned every frame from the camera
+      // offset. A factor of 0 pins a layer to the viewport, 1 locks it to the
+      // world; everything between reads as distance.
+      const parallax: Array<{ obj: GameObj; factor: number; drift: number }> = [];
+      const layer = (sprite: string, y: number, z: number, factor: number, drift = 0) => {
+        const obj = k.add([k.sprite(sprite), k.pos(0, y), k.z(z), k.fixed(), k.anchor("topleft")]);
+        parallax.push({ obj, factor, drift });
+        return obj;
+      };
 
-      // Grass
-      k.add([k.rect(480, 180), k.pos(0, 180), k.color(124, 200, 80), k.z(-5)]);
-      k.add([k.rect(480, 180), k.pos(0, 210), k.color(105, 175, 65), k.z(-5)]);
+      // The ground sprite's top edge is the visible horizon; the hill and tree
+      // layers are positioned so their bases land just behind it rather than
+      // being swallowed by it.
+      const GROUND_TOP = HORIZON - 14;
+      layer("sky", 0, -1000, 0);
+      layer("clouds", 10, -900, 0.12, 1.6);
+      layer("hills", GROUND_TOP - 68, -800, 0.28);
+      layer("treeline", GROUND_TOP - 66, -700, 0.55);
 
-      // Dirt path
-      k.add([k.rect(70, 30), k.pos(205, 295), k.color(190, 155, 115), k.z(-4)]);
-      k.add([k.rect(70, 12), k.pos(205, 325), k.color(170, 135, 95), k.z(-4)]);
+      // Ground is world-locked, so it needs no parallax bookkeeping.
+      k.add([k.sprite("ground"), k.pos(0, GROUND_TOP), k.z(-600), k.anchor("topleft")]);
 
-      // Clouds
-      drawCloud(k, 70, 35);
-      drawCloud(k, 210, 55);
-      drawCloud(k, 380, 30);
-
-      // Trees
-      drawTree(k, 35, k.height() - 90);
-      drawTree(k, k.width() - 55, k.height() - 85);
-
-      // Flowers
-      drawFlower(k, 85, k.height() - 25);
-      drawFlower(k, 160, k.height() - 23);
-      drawFlower(k, k.width() - 75, k.height() - 28);
-      drawFlower(k, k.width() - 130, k.height() - 25);
-
-      // Fence
-      for (let x = 10; x < k.width() - 60; x += 30) {
-        if (x > 160 && x < k.width() - 160) continue;
-        drawFencePost(k, x, k.height() - 85);
-      }
-
-      // ── LEMONADE STAND ──
-      const standX = k.width() / 2;
-      const standY = k.height() - 110;
-
-      // Counter surface
-      k.add([k.rect(150, 12), k.pos(standX - 75, standY + 48), k.color(180, 120, 60), k.z(1)]);
-      k.add([k.rect(150, 4), k.pos(standX - 75, standY + 45), k.color(200, 140, 70), k.z(1)]);
-      // Counter front
-      k.add([k.rect(150, 40), k.pos(standX - 75, standY + 60), k.color(140, 85, 40), k.z(1)]);
-      // Wood grain
-      for (let i = 0; i < 4; i++) {
-        k.add([k.rect(140, 1), k.pos(standX - 70, standY + 65 + i * 8), k.color(120, 70, 30), k.z(1)]);
-      }
-
-      // Awning
-      k.add([k.rect(170, 8), k.pos(standX - 85, standY - 5), k.color(220, 180, 60), k.z(1)]);
-      for (let i = 0; i < 9; i++) {
+      // ── Scenery ──
+      const shadowFor = (x: number, y: number, scale = 1) =>
         k.add([
-          k.rect(19, 60),
-          k.pos(standX - 85 + i * 19, standY - 55),
-          k.color(i % 2 === 0 ? [255, 220, 100] as [number, number, number] : [255, 255, 255] as [number, number, number]),
-          k.z(1),
+          k.sprite("shadow"), k.pos(x, y), k.anchor("center"),
+          k.scale(scale, scale), k.z(y - 1),
         ]);
+
+      const prop = (sprite: string, x: number, y: number, shadowScale = 1) => {
+        if (shadowScale > 0) shadowFor(x, y, shadowScale);
+        return k.add([k.sprite(sprite), k.pos(x, y), k.anchor("bot"), k.z(y)]);
+      };
+
+      // Trees frame the scene and mark its edges; the sway is applied below.
+      const trees = [
+        prop("tree", 58, 178, 1.5),
+        prop("tree", 232, 170, 1.4),
+        prop("tree", 548, 172, 1.4),
+        prop("tree", 712, 180, 1.5),
+      ];
+      const bushes = [
+        prop("bush", 128, 190, 0.8), prop("bush", 300, 176, 0.8),
+        prop("bush", 470, 182, 0.8), prop("bush", 636, 188, 0.8),
+        prop("bush", 196, 226, 0.9), prop("bush", 592, 230, 0.9),
+      ];
+      for (let x = 14; x < WORLD_W; x += 32) {
+        // Leave the middle open so the fence never crosses the stand.
+        if (Math.abs(x - STAND_X) < 120) continue;
+        k.add([k.sprite("fence"), k.pos(x, 172), k.anchor("bot"), k.z(171)]);
       }
+      prop("barrel", 268, 214, 0.7);
+      prop("barrel", 282, 218, 0.7);
 
-      // Poles
-      k.add([k.rect(8, 110), k.pos(standX - 78, standY - 5), k.color(100, 65, 30), k.z(0)]);
-      k.add([k.rect(8, 110), k.pos(standX + 70, standY - 5), k.color(100, 65, 30), k.z(0)]);
+      // ── The stand ──
+      shadowFor(STAND_X, STAND_BASE_Y + 2, 3);
+      k.add([k.sprite("stand"), k.pos(STAND_X, STAND_BASE_Y), k.anchor("bot"), k.z(STAND_BASE_Y)]);
 
-      // Sign
-      k.add([k.rect(130, 22), k.pos(standX - 65, standY - 50), k.color(100, 60, 20), k.z(2)]);
-      k.add([k.rect(126, 18), k.pos(standX - 63, standY - 48), k.color(180, 140, 80), k.z(2)]);
-      k.add([
-        k.text("GOURMET LEMONADE", { size: 10 }),
-        k.pos(standX, standY - 39),
-        k.anchor("center"),
-        k.color(80, 40, 10),
-        k.z(2),
-      ]);
+      const signY = 206;
+      prop("sign", STAND_X - 96, signY, 1.2);
+      const signLabel = (text: string, dy: number) =>
+        k.add([
+          k.text(text, { size: 7, align: "center" }),
+          k.pos(STAND_X - 96, signY - 38 + dy),
+          k.anchor("center"), k.color(92, 58, 28), k.z(signY + 1),
+        ]);
+      signLabel("GOURMET", 8);
+      signLabel("LEMONADE", 17);
 
-      // String lights
-      for (let i = 0; i < 7; i++) {
-        const lx = standX - 60 + i * 20;
-        k.add([k.rect(4, 4), k.pos(lx, standY - 50), k.color(255, 255, 150), k.z(3)]);
-        k.add([k.circle(8), k.pos(lx - 2, standY - 54), k.color(255, 255, 150), k.opacity(0.25), k.z(2)]);
-      }
-
-      // Bottles on counter
-      const bottleColors: [number, number, number][] = [[255, 240, 180], [255, 200, 210]];
-      FLAVORS.forEach((_, i) => {
-        const bx = standX - 35 + i * 70;
-        const by = standY + 30;
-        k.add([k.rect(8, 16), k.pos(bx, by), k.color(bottleColors[i]), k.z(2)]);
-        k.add([k.rect(6, 4), k.pos(bx + 1, by - 4), k.color(150, 150, 150), k.z(2)]);
-        k.add([k.rect(8, 3), k.pos(bx, by + 5), k.color(255, 255, 255), k.opacity(0.6), k.z(2)]);
-      });
-
-      // ── PLAYER ──
+      // ── Player ──
       const player = k.add([
-        k.sprite("player-idle"),
-        k.pos(60, k.height() - 115),
-        k.area({ scale: 0.7 }),
-        k.body(),
-        k.scale(),
-        k.anchor("center"),
-        k.z(5),
-        "player",
+        k.sprite("player-idle"), k.pos(STAND_X - 150, 212), k.anchor("bot"),
+        k.z(212), k.scale(1, 1),
+      ]);
+      const playerShadow = k.add([
+        k.sprite("shadow"), k.pos(0, 0), k.anchor("center"), k.scale(0.8, 0.7), k.z(0),
       ]);
 
-      let currentAnim = "idle";
-      let facing = "down";
+      let facing: "down" | "up" | "side" = "down";
+      let moving = false;
+      let currentSprite = "";
 
-      function setAnim(anim: string) {
-        if (anim === currentAnim) return;
-        currentAnim = anim;
-        switch (anim) {
-          case "idle": player.use(k.sprite("player-idle")); break;
-          case "walk-down": player.use(k.sprite("player-walk-down", { anim: "walk" })); break;
-          case "walk-up": player.use(k.sprite("player-walk-up", { anim: "walk" })); break;
-          case "walk-left": player.use(k.sprite("player-walk-left", { anim: "walk" })); break;
-          case "walk-right": player.use(k.sprite("player-walk-right", { anim: "walk" })); break;
-        }
+      function setSprite(name: string, anim?: string) {
+        if (name === currentSprite) return;
+        currentSprite = name;
+        player.use(anim ? k.sprite(name, { anim }) : k.sprite(name));
       }
 
-      // ── INTERACTION ZONE ──
-      const interactZone = k.add([
-        k.rect(50, 25),
-        k.pos(standX - 25, standY + 25),
-        k.area(),
-        k.opacity(0),
-        "interact-zone",
-      ]);
+      // ── Input ──
+      const held = { left: false, right: false, up: false, down: false };
+      const bind = (keys: string[], prop: keyof typeof held) => {
+        keys.forEach((key) => {
+          k.onKeyDown(key as never, () => { held[prop] = true; });
+          k.onKeyRelease(key as never, () => { held[prop] = false; });
+        });
+      };
+      bind(["left", "a"], "left");
+      bind(["right", "d"], "right");
+      bind(["up", "w"], "up");
+      bind(["down", "s"], "down");
 
-      // Speech bubble
-      const bubble = k.add([k.pos(standX, standY - 80), k.anchor("center"), k.opacity(0), k.z(6)]);
-      bubble.add([k.rect(140, 20), k.pos(-70, -10), k.color(255, 255, 255)]);
-      bubble.add([k.rect(8, 8), k.pos(-4, 10), k.color(255, 255, 255), k.rotate(45)]);
-      bubble.add([
-        k.text("Press SPACE to order!", { size: 9 }),
-        k.pos(0, -3),
-        k.anchor("center"),
-        k.color(40, 40, 40),
+      // Tap-to-move replaces the old on-screen D-pad: tap anywhere to walk
+      // there, tap the stand to walk over and open the order menu on arrival.
+      let target: { x: number; y: number } | null = null;
+      let openOnArrival = false;
+      let marker: GameObj | null = null;
+
+      function walkTo(x: number, y: number, thenOrder = false) {
+        target = {
+          x: k.clamp(x, 12, WORLD_W - 12),
+          y: k.clamp(y, WALK_TOP, WALK_BOTTOM),
+        };
+        openOnArrival = thenOrder;
+        marker?.destroy();
+        marker = k.add([
+          k.sprite("tap-marker"), k.pos(target.x, target.y), k.anchor("center"),
+          k.z(target.y - 2), k.opacity(0.9), k.scale(1, 1),
+        ]);
+        const ring = marker;
+        ring.onUpdate(() => {
+          ring.scale.x = ring.scale.y = 1 + Math.sin(k.time() * 8) * 0.15;
+        });
+      }
+
+      // KAPLAY derives pointer position as (clientX - rect.left) / scale, which
+      // is only correct while the canvas is displayed at its backing-store
+      // size. This one is responsive, so every tap landed short. Map it off the
+      // element's real rect instead — correct at any display size, mouse or
+      // touch.
+      canvas.addEventListener("pointerdown", (e: PointerEvent) => {
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const cam = k.getCamPos();
+        const x = ((e.clientX - rect.left) / rect.width) * VIEW_W + cam.x - VIEW_W / 2;
+        const y = ((e.clientY - rect.top) / rect.height) * VIEW_H + cam.y - VIEW_H / 2;
+
+        // Bounded by the stand's own footprint. Letting it spill onto the path
+        // meant tapping the ground in front of the counter force-opened the
+        // menu when the player only meant to walk there.
+        const onStand =
+          Math.abs(x - STAND_X) < art.stand.width / 2 &&
+          y > STAND_BASE_Y - art.stand.height &&
+          y < STAND_BASE_Y + 4;
+        if (onStand) walkTo(COUNTER_SPOT.x, COUNTER_SPOT.y, true);
+        else walkTo(x, y);
+      }, { signal: input.signal });
+
+      // ── Interaction prompt ──
+      const prompt = k.add([k.pos(STAND_X, STAND_BASE_Y - 74), k.z(900), k.opacity(0)]);
+      const promptBg = prompt.add([
+        k.rect(84, 15), k.pos(0, 0), k.anchor("center"),
+        k.color(255, 252, 240), k.outline(2, k.rgb(58, 39, 24)), k.opacity(0),
+      ]);
+      const promptTip = prompt.add([
+        k.rect(6, 6), k.pos(0, 7), k.anchor("center"), k.rotate(45),
+        k.color(255, 252, 240), k.opacity(0),
+      ]);
+      const promptText = prompt.add([
+        k.text("", { size: 7, align: "center" }), k.pos(0, 0),
+        k.anchor("center"), k.color(58, 39, 24), k.opacity(0),
       ]);
 
       let canInteract = false;
-      player.onCollide("interact-zone", () => { canInteract = true; bubble.opacity = 1; });
-      player.onCollideEnd("interact-zone", () => { canInteract = false; bubble.opacity = 0; });
+      const openOrder = () => {
+        target = null;
+        marker?.destroy();
+        marker = null;
+        window.dispatchEvent(new CustomEvent("open-package-modal"));
+      };
+      k.onKeyPress("space", () => { if (canInteract) openOrder(); });
+      k.onKeyPress("enter", () => { if (canInteract) openOrder(); });
 
-      // ── CONTROLS ──
-      const SPEED = 100;
-      const keys: Record<string, boolean> = { left: false, right: false, up: false, down: false };
-
-      k.onKeyDown("left", () => { keys.left = true; });
-      k.onKeyDown("right", () => { keys.right = true; });
-      k.onKeyDown("up", () => { keys.up = true; });
-      k.onKeyDown("down", () => { keys.down = true; });
-      k.onKeyRelease("left", () => { keys.left = false; });
-      k.onKeyRelease("right", () => { keys.right = false; });
-      k.onKeyRelease("up", () => { keys.up = false; });
-      k.onKeyRelease("down", () => { keys.down = false; });
-
-      k.onKeyPress("space", () => {
-        if (canInteract) window.dispatchEvent(new CustomEvent("open-package-modal"));
-      });
-      k.onClick("interact-zone", () => {
-        if (canInteract) window.dispatchEvent(new CustomEvent("open-package-modal"));
-      });
-
-      // Player movement + animation
+      // ── Player update ──
       player.onUpdate(() => {
         let vx = 0, vy = 0;
-        if (keys.left) vx -= 1;
-        if (keys.right) vx += 1;
-        if (keys.up) vy -= 1;
-        if (keys.down) vy += 1;
+        if (held.left) vx -= 1;
+        if (held.right) vx += 1;
+        if (held.up) vy -= 1;
+        if (held.down) vy += 1;
 
-        if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
-        player.move(vx * SPEED, vy * SPEED);
-
+        // Keyboard input cancels a pending tap destination.
         if (vx !== 0 || vy !== 0) {
-          if (Math.abs(vy) > Math.abs(vx)) {
-            facing = vy < 0 ? "up" : "down";
+          target = null;
+          openOnArrival = false;
+          marker?.destroy();
+          marker = null;
+        } else if (target) {
+          const dx = target.x - player.pos.x;
+          const dy = target.y - player.pos.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 2) {
+            player.pos.x = target.x;
+            player.pos.y = target.y;
+            target = null;
+            marker?.destroy();
+            marker = null;
+            if (openOnArrival) {
+              openOnArrival = false;
+              // Defer a frame so the arrival pose renders before the overlay.
+              k.wait(0.05, () => { if (canInteract) openOrder(); });
+            }
           } else {
-            facing = vx < 0 ? "left" : "right";
+            vx = dx / dist;
+            vy = dy / dist;
           }
-          setAnim(`walk-${facing}`);
-        } else {
-          setAnim("idle");
         }
 
-        player.pos.x = Math.max(10, Math.min(k.width() - 10, player.pos.x));
-        player.pos.y = Math.max(k.height() - 130, Math.min(k.height() - 15, player.pos.y));
+        const len = Math.hypot(vx, vy);
+        moving = len > 0;
+        if (moving) {
+          player.pos.x = k.clamp(player.pos.x + (vx / len) * SPEED * k.dt(), 12, WORLD_W - 12);
+          player.pos.y = k.clamp(player.pos.y + (vy / len) * SPEED * k.dt(), WALK_TOP, WALK_BOTTOM);
+          if (Math.abs(vx) > Math.abs(vy)) {
+            facing = "side";
+            player.scale.x = vx < 0 ? -1 : 1;
+          } else {
+            facing = vy < 0 ? "up" : "down";
+            player.scale.x = 1;
+          }
+          setSprite(`player-${facing}`, "walk");
+        } else if (facing === "down") {
+          setSprite("player-idle");
+        } else {
+          setSprite(`player-${facing}`, "walk");
+          // Freeze the cycle on the planted frame so idling isn't a moonwalk.
+          (player as unknown as { frame: number }).frame = 0;
+        }
+
+        player.z = player.pos.y;
+        playerShadow.pos.x = player.pos.x;
+        playerShadow.pos.y = player.pos.y - 1;
+        playerShadow.z = player.pos.y - 2;
+
+        const near =
+          Math.abs(player.pos.x - STAND_X) < 46 &&
+          player.pos.y > STAND_BASE_Y - 4 &&
+          player.pos.y < STAND_BASE_Y + 40;
+        if (near !== canInteract) {
+          canInteract = near;
+          const label = k.isTouchscreen() ? "TAP THE STAND TO ORDER" : "PRESS SPACE TO ORDER";
+          promptText.text = label;
+          promptBg.width = label.length * 4.6 + 12;
+        }
+        const goal = canInteract ? 1 : 0;
+        const o = k.lerp(promptBg.opacity, goal, k.dt() * 12);
+        promptBg.opacity = promptTip.opacity = promptText.opacity = o;
+        prompt.pos.y = STAND_BASE_Y - 74 + Math.sin(k.time() * 3) * 1.5;
       });
 
-      // ── NPCS ──
-      for (let i = 0; i < 3; i++) {
+      // ── Camera ──
+      k.onUpdate(() => {
+        const camX = k.clamp(player.pos.x, VIEW_W / 2, WORLD_W - VIEW_W / 2);
+        k.setCamPos(camX, VIEW_H / 2);
+        const scroll = camX - VIEW_W / 2;
+        for (const { obj, factor, drift } of parallax) {
+          obj.pos.x = -scroll * factor - (drift ? (k.time() * drift) % 260 : 0);
+        }
+      });
+
+      // ── Ambient life ──
+      // NPCs patrol the path; one occasionally stops at the counter and leaves
+      // with a lemon, which is the whole point — the world is the business.
+      art.npcs.forEach((_, i) => {
+        const y = 196 + i * 9;
         const npc = k.add([
           k.sprite(`npc-${i}`, { anim: "walk" }),
-          k.pos(100 + i * 120, k.height() - 115),
-          k.area({ scale: 0.6 }),
-          k.body(),
-          k.anchor("center"),
-          k.z(4),
+          k.pos(120 + i * 165, y), k.anchor("bot"), k.z(y), k.scale(1, 1),
         ]);
-
-        let dir = Math.random() > 0.5 ? 1 : -1;
-        let timer = 0;
-        const speed = [30, 45, 35][i];
+        const npcShadow = k.add([
+          k.sprite("shadow"), k.pos(0, 0), k.anchor("center"),
+          k.scale(0.75, 0.65), k.z(y - 2),
+        ]);
+        let dir = i % 2 === 0 ? 1 : -1;
+        let pause = 0;
+        const speed = 22 + i * 5;
 
         npc.onUpdate(() => {
-          timer += k.dt();
-          if (timer > 3 + Math.random() * 3) { dir *= -1; timer = 0; }
-          npc.move(dir * speed, 0);
-          npc.flipX = dir < 0;
-          npc.pos.x = Math.max(15, Math.min(k.width() - 15, npc.pos.x));
-          npc.pos.y = k.height() - 115 + Math.sin(k.time() * 2 + i) * 3;
+          if (pause > 0) {
+            pause -= k.dt();
+            npc.frame = 0;
+          } else {
+            npc.pos.x += dir * speed * k.dt();
+            npc.scale.x = dir < 0 ? -1 : 1;
+            if (npc.pos.x < 24 || npc.pos.x > WORLD_W - 24) dir *= -1;
+            // Linger at the counter and buy something.
+            if (Math.abs(npc.pos.x - STAND_X) < 8 && Math.random() < 0.03) {
+              pause = 1.6 + Math.random() * 1.5;
+              popLemon(k, npc.pos.x, npc.pos.y - 30);
+            }
+          }
+          npcShadow.pos.x = npc.pos.x;
+          npcShadow.pos.y = npc.pos.y - 1;
         });
-      }
+      });
 
-      // ── DOG ──
       const dog = k.add([
-        k.sprite("dog"),
-        k.pos(380, k.height() - 100),
-        k.area({ scale: 0.6 }),
-        k.body(),
-        k.anchor("center"),
-        k.z(4),
+        k.sprite("dog", { anim: "wag" }), k.pos(470, 222),
+        k.anchor("bot"), k.z(222), k.scale(1, 1),
       ]);
-
       let dogDir = -1;
-      let dogTimer = 0;
+      let dogPause = 0;
       dog.onUpdate(() => {
-        dogTimer += k.dt();
-        if (dogTimer > 2 + Math.random() * 2) { dogDir *= -1; dogTimer = 0; }
-        dog.move(dogDir * 25, 0);
-        dog.flipX = dogDir < 0;
-        dog.pos.x = Math.max(20, Math.min(k.width() - 20, dog.pos.x));
-        dog.pos.y = k.height() - 100 + Math.sin(k.time() * 3) * 4;
-      });
-
-      // ── PARTICLES ──
-      // Falling leaves
-      for (let i = 0; i < 8; i++) {
-        const leafColors: [number, number, number][] = [[200, 160, 120], [180, 140, 80], [160, 200, 100]];
-        k.loop(0.5 + Math.random() * 2, () => {
-          k.add([
-            k.rect(3, 3),
-            k.pos(k.rand(0, k.width()), -5),
-            k.color(leafColors[Math.floor(Math.random() * 3)]),
-            k.move(k.rand(70, 110), k.rand(30, 60)),
-            k.lifespan(4 + Math.random() * 4, { fade: 0.5 }),
-            k.rotate(k.rand(0, 360)),
-            k.z(6),
-            k.opacity(0.7),
-          ]);
-        });
-      }
-
-      // Sparkles near stand
-      k.loop(1, () => {
-        k.add([
-          k.rect(2, 2),
-          k.pos(standX + k.rand(-40, 40), standY + k.rand(-80, 30)),
-          k.color(255, 255, 200),
-          k.lifespan(1.5, { fade: 0.3 }),
-          k.z(7),
-          k.opacity(0.8),
-        ]);
-      });
-
-      // ── CELEBRATE ON ORDER ──
-      (window as any).__celebrateLemonade = () => {
-        const cx = k.width() / 2;
-        const cy = k.height() / 2;
-        const colors: [number, number, number][] = [
-          [255, 220, 80], [255, 150, 200], [150, 255, 200],
-          [255, 200, 100], [200, 180, 255], [255, 255, 255],
-        ];
-        for (let i = 0; i < 40; i++) {
-          const angle = (Math.PI * 2 * i) / 40;
-          const c = colors[i % colors.length];
-          k.add([
-            k.rect(k.rand(3, 6), k.rand(3, 6)),
-            k.pos(cx, cy),
-            k.color(c[0], c[1], c[2]),
-            k.move(angle, k.rand(80, 250)),
-            k.lifespan(2, { fade: 0.1 }),
-            k.anchor("center"),
-            k.z(10),
-            k.rotate(k.rand(0, 360)),
-          ]);
+        if (dogPause > 0) { dogPause -= k.dt(); return; }
+        dog.pos.x += dogDir * 34 * k.dt();
+        dog.scale.x = dogDir < 0 ? -1 : 1;
+        if (dog.pos.x < 60 || dog.pos.x > WORLD_W - 60 || Math.random() < 0.004) {
+          dogDir *= -1;
+          dogPause = 0.6 + Math.random();
         }
-        const txt = k.add([
-          k.text("ORDER PLACED!", { size: 20 }),
-          k.pos(cx, cy - 40),
-          k.anchor("center"),
-          k.color(255, 220, 80),
-          k.z(10),
-          k.lifespan(2.5, { fade: 0.3 }),
+      });
+
+      // Trees and bushes breathe on a sine so the scene is never fully static.
+      [...trees, ...bushes].forEach((obj, i) => {
+        obj.use(k.scale(1, 1));
+        obj.onUpdate(() => {
+          (obj as unknown as { scale: { x: number } }).scale.x =
+            1 + Math.sin(k.time() * 1.1 + i * 1.7) * 0.014;
+        });
+      });
+
+      // Leaves drifting down through the scene.
+      k.loop(1.1, () => {
+        const x = k.rand(0, WORLD_W);
+        const leaf = k.add([
+          k.rect(2, 2), k.pos(x, HORIZON - 30),
+          k.color(k.choose([k.rgb(122, 196, 85), k.rgb(255, 217, 92), k.rgb(196, 160, 92)])),
+          k.rotate(0), k.opacity(0.85), k.z(880), k.lifespan(6, { fade: 1 }),
         ]);
-        txt.onUpdate(() => { txt.pos.y -= 0.5; });
+        const sway = k.rand(0, 6);
+        leaf.onUpdate(() => {
+          leaf.pos.y += 12 * k.dt();
+          leaf.pos.x += Math.sin(k.time() * 2 + sway) * 10 * k.dt();
+          leaf.angle += 60 * k.dt();
+        });
+      });
+
+      // Pollen catching the light.
+      k.loop(0.35, () => {
+        const mote = k.add([
+          k.rect(1, 1), k.pos(k.rand(0, WORLD_W), k.rand(HORIZON, VIEW_H)),
+          k.color(255, 250, 205), k.opacity(0.75), k.z(870), k.lifespan(2.4, { fade: 1 }),
+        ]);
+        mote.onUpdate(() => { mote.pos.y -= 7 * k.dt(); });
+      });
+
+      // Grass fringe over everything, so the camera sits down in the field.
+      k.add([k.sprite("fringe"), k.pos(0, VIEW_H - 8), k.z(890), k.anchor("topleft")]);
+
+      // ── Celebration ──
+      (window as CelebrateWindow).__celebrateLemonade = () => {
+        const cx = player.pos.x;
+        const cy = player.pos.y - 40;
+        const colors = [
+          k.rgb(255, 217, 92), k.rgb(255, 208, 220), k.rgb(150, 235, 200),
+          k.rgb(255, 255, 255), k.rgb(201, 79, 79),
+        ];
+        for (let i = 0; i < 46; i++) {
+          const angle = (Math.PI * 2 * i) / 46;
+          const speed = k.rand(50, 130);
+          const bit = k.add([
+            k.rect(k.rand(2, 4), k.rand(2, 4)), k.pos(cx, cy),
+            k.color(colors[i % colors.length]), k.rotate(k.rand(0, 360)),
+            k.anchor("center"), k.z(950), k.opacity(1), k.lifespan(1.8, { fade: 0.6 }),
+          ]);
+          let vy = Math.sin(angle) * speed - 40;
+          bit.onUpdate(() => {
+            bit.pos.x += Math.cos(angle) * speed * k.dt();
+            bit.pos.y += vy * k.dt();
+            vy += 190 * k.dt();
+            bit.angle += 220 * k.dt();
+          });
+        }
+        const banner = k.add([
+          k.text("ORDER PLACED!", { size: 14, align: "center" }),
+          k.pos(VIEW_W / 2, VIEW_H / 2 - 30), k.anchor("center"),
+          k.color(255, 232, 140), k.outline(3, k.rgb(58, 39, 24)),
+          k.fixed(), k.z(960), k.opacity(1), k.lifespan(2.2, { fade: 0.8 }),
+        ]);
+        banner.onUpdate(() => { banner.pos.y -= 14 * k.dt(); });
       };
     });
 
     k.go("main");
 
     return () => {
-      delete (window as any).__celebrateLemonade;
-      try { (k as any).destroy(); } catch {}
+      input.abort();
+      delete (window as CelebrateWindow).__celebrateLemonade;
+      try { k.quit(); } catch { /* already torn down */ }
     };
   }, []);
 
-  // ── Mobile D-pad ──
-  const sendKey = useCallback((key: string) => {
-    window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-  }, []);
-  const releaseKey = useCallback((key: string) => {
-    window.dispatchEvent(new KeyboardEvent("keyup", { key, bubbles: true }));
-  }, []);
-
-  const btn = "w-12 h-12 bg-stone-800/90 text-amber-400 text-lg rounded active:bg-amber-600 flex items-center justify-center select-none touch-none border border-stone-600";
-
   return (
-    <div className="flex flex-col items-center">
-      <canvas
-        ref={canvasRef}
-        width={480}
-        height={360}
-        className="mx-auto border-4 border-stone-700 rounded-lg max-w-full h-auto"
-        style={{ imageRendering: "pixelated" }}
-      />
-      <div className="grid grid-cols-3 gap-1.5 mt-3 sm:hidden">
-        <div />
-        <button className={btn} onTouchStart={() => sendKey("ArrowUp")} onTouchEnd={() => releaseKey("ArrowUp")}>▲</button>
-        <div />
-        <button className={btn} onTouchStart={() => sendKey("ArrowLeft")} onTouchEnd={() => releaseKey("ArrowLeft")}>◀</button>
-        <div className={btn + " opacity-30"} />
-        <button className={btn} onTouchStart={() => sendKey("ArrowRight")} onTouchEnd={() => releaseKey("ArrowRight")}>▶</button>
-        <div />
-        <button className={btn} onTouchStart={() => sendKey("ArrowDown")} onTouchEnd={() => releaseKey("ArrowDown")}>▼</button>
-        <div />
+    <div className="w-full max-w-[720px]">
+      <div className="relative rounded-lg border-4 border-[#5c3a1c] bg-[#2f2119] p-1 shadow-[0_6px_0_0_#2a1a10,0_10px_24px_rgba(0,0,0,0.45)]">
+        <canvas ref={canvasRef} className="game-canvas rounded-sm" />
       </div>
-      <p className="text-stone-500 text-xs mt-2 sm:hidden">Use D-pad to walk, tap stand to order</p>
+      <p className="mt-2 text-center text-[11px] text-stone-500">
+        Tap anywhere to walk · tap the stand to order
+        <span className="hidden sm:inline"> · or use WASD / arrows + SPACE</span>
+      </p>
     </div>
   );
 }
 
-// ── Scene drawing helpers ──
-
-function drawCloud(k: ReturnType<typeof kaboom>, x: number, y: number) {
-  const c = k.add([k.pos(x, y), k.z(-3), k.opacity(0.9)]);
-  c.add([k.rect(24, 10), k.pos(4, 4), k.color(255, 255, 255)]);
-  c.add([k.rect(16, 8), k.pos(0, 6), k.color(255, 255, 255)]);
-  c.add([k.rect(20, 6), k.pos(10, 2), k.color(255, 255, 255)]);
+/** Small lemon that pops above an NPC when they buy at the counter. */
+function popLemon(k: KAPLAYCtx, x: number, y: number) {
+  const lemon = k.add([
+    k.rect(5, 4), k.pos(x, y), k.color(255, 217, 92),
+    k.outline(1, k.rgb(58, 39, 24)), k.anchor("center"),
+    k.z(940), k.opacity(1), k.lifespan(1.2, { fade: 0.5 }),
+  ]);
+  lemon.onUpdate(() => { lemon.pos.y -= 16 * k.dt(); });
 }
 
-function drawTree(k: ReturnType<typeof kaboom>, x: number, y: number) {
-  const t = k.add([k.pos(x, y), k.anchor("bot"), k.z(-2)]);
-  t.add([k.rect(10, 35), k.pos(-5, -35), k.color(139, 105, 20)]);
-  t.add([k.circle(18), k.pos(0, -55), k.color(58, 140, 42)]);
-  t.add([k.circle(14), k.pos(-6, -68), k.color(74, 160, 50)]);
-  t.add([k.circle(12), k.pos(4, -72), k.color(86, 180, 56)]);
-  t.add([k.circle(8), k.pos(-2, -78), k.color(100, 200, 70), k.opacity(0.7)]);
-}
-
-function drawFlower(k: ReturnType<typeof kaboom>, x: number, y: number) {
-  const colorSets: [number, number, number][] = [[255, 107, 138], [255, 182, 193], [255, 215, 0], [255, 140, 105]];
-  const c = colorSets[Math.floor(Math.random() * 4)];
-  k.add([k.rect(2, 7), k.pos(x - 1, y - 5), k.color(74, 140, 42), k.z(-1)]);
-  k.add([k.rect(6, 6), k.pos(x - 3, y - 11), k.color(c), k.z(-1)]);
-  k.add([k.rect(3, 3), k.pos(x - 1.5, y - 9.5), k.color(255, 215, 0), k.z(-1)]);
-}
-
-function drawFencePost(k: ReturnType<typeof kaboom>, x: number, y: number) {
-  k.add([k.rect(5, 22), k.pos(x - 2.5, y - 22), k.color(196, 148, 106), k.z(-1)]);
-  k.add([k.rect(7, 3), k.pos(x - 3.5, y - 25), k.color(168, 120, 74), k.z(-1)]);
-}
+type CelebrateWindow = Window & { __celebrateLemonade?: () => void };

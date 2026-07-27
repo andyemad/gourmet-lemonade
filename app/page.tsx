@@ -15,7 +15,7 @@ import { playClick, playConfirm, playSuccess, playError } from "@/lib/sounds";
 
 type Step = "game" | "package" | "flavor" | "eta" | "confirm" | "success";
 
-// Generate a session identifier for order tracking (no auth required)
+// Order tracking identifier for a customer session — no accounts, no login.
 function sessionId(): string {
   if (typeof window === "undefined") return "GUEST-SSR";
   let id = sessionStorage.getItem("lemonade_session");
@@ -34,7 +34,6 @@ export default function Home() {
   const [orderId, setOrderId] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
-  // Listen for game events
   useEffect(() => {
     const handler = () => {
       playConfirm();
@@ -70,28 +69,21 @@ export default function Home() {
       const res = await fetch("/api/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: sessionId(),
-          package: selectedPkg,
-          flavors,
-          eta,
-        }),
+        body: JSON.stringify({ code: sessionId(), package: selectedPkg, flavors, eta }),
       });
-
       const data = await res.json();
 
       if (data.success) {
         setOrderId(data.orderId);
         setStep("success");
         playSuccess();
-        try {
-          (window as any).__celebrateLemonade?.();
-        } catch {}
+        (window as Window & { __celebrateLemonade?: () => void }).__celebrateLemonade?.();
       } else {
         playError();
         alert(data.error || "Failed to place order");
       }
     } catch {
+      playError();
       alert("Network error. Please try again.");
     } finally {
       setLoading(false);
@@ -99,7 +91,6 @@ export default function Home() {
   }, [selectedPkg, flavors, eta]);
 
   const handleDone = useCallback(() => {
-    // Full wipe, back to game
     sessionStorage.clear();
     setStep("game");
     setSelectedPkg(null);
@@ -109,65 +100,55 @@ export default function Home() {
     setLoading(false);
   }, []);
 
-  const pkgGlasses = selectedPkg
-    ? PACKAGES.find((p) => p.id === selectedPkg)!.glasses
-    : 0;
-  const pkgTotal = selectedPkg
-    ? PACKAGES.find((p) => p.id === selectedPkg)!.price
-    : 0;
+  const pkg = selectedPkg ? PACKAGES.find((p) => p.id === selectedPkg)! : null;
 
   return (
-    <>
-      {step !== "success" && (
-        <main className="min-h-screen bg-stone-900 flex flex-col items-center justify-center p-4">
-          <h1 className="text-2xl font-bold text-amber-400 font-mono mb-1">
-            🍋 Gourmet Lemonade
-          </h1>
-          <p className="text-stone-500 text-xs mb-4">
-            Walk up to the stand → Press SPACE → Order
-          </p>
+    <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#1b1410] p-4">
+      <header className="text-center">
+        <h1
+          className="text-[15px] leading-relaxed text-lemon"
+          style={{ fontFamily: "var(--font-pixel)", textShadow: "2px 2px 0 #3a2718" }}
+        >
+          GOURMET LEMONADE
+        </h1>
+        <p className="mt-2 text-[11px] text-stone-500">
+          Walk up to the stand and place a real order.
+        </p>
+      </header>
 
-          {step === "game" && <Game accessCode={sessionId()} />}
+      <Game />
 
-          <PackageModal
-            isOpen={step === "package"}
-            onSelect={handleSelectPackage}
-            onClose={() => setStep("game")}
-          />
-
-          <FlavorModal
-            isOpen={step === "flavor"}
-            pkg={selectedPkg!}
-            glasses={pkgGlasses}
-            onConfirm={handleConfirmFlavors}
-            onBack={() => setStep("package")}
-          />
-
-          <ETAModal
-            isOpen={step === "eta"}
-            onConfirm={handleConfirmEta}
-            onBack={() => setStep("flavor")}
-          />
-
-          <ConfirmModal
-            isOpen={step === "confirm"}
-            pkg={selectedPkg!}
-            flavors={flavors}
-            eta={eta}
-            total={pkgTotal}
-            onSubmit={handleSubmitOrder}
-            onBack={() => setStep("eta")}
-            loading={loading}
-          />
-        </main>
+      {step === "package" && (
+        <PackageModal onSelect={handleSelectPackage} onClose={() => setStep("game")} />
       )}
 
-      <SuccessModal
-        isOpen={step === "success"}
-        orderId={orderId}
-        eta={eta}
-        onDone={handleDone}
-      />
-    </>
+      {step === "flavor" && pkg && (
+        <FlavorModal
+          glasses={pkg.glasses}
+          onConfirm={handleConfirmFlavors}
+          onBack={() => setStep("package")}
+        />
+      )}
+
+      {step === "eta" && (
+        <ETAModal onConfirm={handleConfirmEta} onBack={() => setStep("flavor")} />
+      )}
+
+      {step === "confirm" && pkg && (
+        <ConfirmModal
+          pkg={pkg.id}
+          flavors={flavors}
+          eta={eta}
+          total={pkg.price}
+          onSubmit={handleSubmitOrder}
+          onBack={() => setStep("eta")}
+          loading={loading}
+        />
+      )}
+
+      {step === "success" && (
+        <SuccessModal orderId={orderId} eta={eta} onDone={handleDone} />
+      )}
+    </main>
   );
 }

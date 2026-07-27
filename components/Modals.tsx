@@ -1,156 +1,10 @@
 "use client";
 
-import { PACKAGES, FLAVORS, type PackageTier, type FlavorName, type FlavorAssignment } from "@/lib/types";
-import { borderPixel, borderPixelActive, btnPixel, btnPixelPrimary } from "@/lib/pixel-styles";
 import { useState } from "react";
+import { PACKAGES, FLAVORS, type PackageTier, type FlavorName, type FlavorAssignment } from "@/lib/types";
 
-const overlayStyle = "fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4";
-const cardStyle = `bg-stone-800 ${borderPixel} rounded-sm p-6 w-full max-w-sm`;
-const titleStyle = "text-xl font-bold text-amber-400 font-mono mb-1 pixelated";
-const subtitleStyle = "text-stone-400 text-xs mb-4";
-
-// ── Package Selection ──
-
-interface PackageModalProps {
-  isOpen: boolean;
-  onSelect: (pkg: PackageTier) => void;
-  onClose: () => void;
-}
-
-export function PackageModal({ isOpen, onSelect, onClose }: PackageModalProps) {
-  if (!isOpen) return null;
-
-  return (
-    <div className={overlayStyle}>
-      <div className={cardStyle}>
-        <h2 className={titleStyle}>📦 Choose Your Pack</h2>
-        <p className={subtitleStyle}>Gourmet small-batch lemonade</p>
-
-        <div className="space-y-2 mb-4">
-          {PACKAGES.map((pkg) => (
-            <button
-              key={pkg.id}
-              onClick={() => onSelect(pkg.id)}
-              className={`w-full text-left p-3 bg-stone-700 border-2 border-stone-600 hover:border-amber-500 shadow-[3px_3px_0px_0px_rgba(0,0,0,0.4)] active:shadow-none active:translate-x-[1px] active:translate-y-[1px] transition-all flex justify-between items-center`}
-            >
-              <div>
-                <div className="text-white font-bold text-sm">{pkg.name}</div>
-                <div className="text-stone-400 text-xs">{pkg.label}</div>
-              </div>
-              <div className="text-amber-400 font-bold text-lg">${pkg.price}</div>
-            </button>
-          ))}
-        </div>
-
-        <button onClick={onClose} className={`${btnPixel} w-full text-sm`}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Flavor Assignment ──
-
-interface FlavorModalProps {
-  isOpen: boolean;
-  pkg: PackageTier;
-  glasses: number;
-  onConfirm: (assignments: FlavorAssignment[]) => void;
-  onBack: () => void;
-}
-
-export function FlavorModal({ isOpen, pkg: _pkg, glasses, onConfirm, onBack }: FlavorModalProps) {
-  if (!isOpen) return null;
-
-  const [counts, setCounts] = useState<Record<string, number>>(
-    Object.fromEntries(FLAVORS.map((f) => [f, 0]))
-  );
-
-  const totalAssigned = Object.values(counts).reduce((sum, c) => sum + c, 0);
-  const remaining = glasses - totalAssigned;
-  const isComplete = remaining === 0;
-
-  const handleConfirm = () => {
-    const assignments: FlavorAssignment[] = FLAVORS
-      .filter((f) => counts[f] > 0)
-      .map((f) => ({ flavor: f as FlavorName, glasses: counts[f] }));
-    onConfirm(assignments);
-  };
-
-  return (
-    <div className={overlayStyle}>
-      <div className={cardStyle}>
-        <h2 className={titleStyle}>🍋 Pick Flavors</h2>
-        <p className={subtitleStyle}>
-          Assign {glasses} glasses across flavors
-        </p>
-
-        {/* Progress bar */}
-        <div className="w-full bg-stone-700 border-2 border-stone-600 h-4 mb-2 shadow-inner">
-          <div
-            className="bg-amber-500 h-full transition-all duration-200"
-            style={{ width: `${Math.min(100, (totalAssigned / glasses) * 100)}%` }}
-          />
-        </div>
-        <p className="text-center text-stone-400 text-xs mb-4 font-mono">
-          {totalAssigned}/{glasses} assigned
-          {remaining > 0 && ` — ${remaining} left`}
-          {isComplete && " ✅"}
-        </p>
-
-        <div className="space-y-2 mb-4">
-          {FLAVORS.map((flavor) => (
-            <div
-              key={flavor}
-              className="flex items-center justify-between bg-stone-700 border-2 border-stone-600 p-2"
-            >
-              <span className="text-white text-sm font-medium">{flavor}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCounts((q) => ({ ...q, [flavor]: Math.max(0, q[flavor] - 1) }))}
-                  disabled={counts[flavor] === 0}
-                  className="w-8 h-8 bg-stone-600 text-white font-bold border-2 border-stone-500 active:bg-red-700 disabled:opacity-30 transition-colors"
-                >
-                  −
-                </button>
-                <span className="text-white w-4 text-center font-mono">{counts[flavor]}</span>
-                <button
-                  onClick={() => setCounts((q) => ({ ...q, [flavor]: q[flavor] + 1 }))}
-                  disabled={totalAssigned >= glasses}
-                  className="w-8 h-8 bg-stone-600 text-white font-bold border-2 border-stone-500 active:bg-green-700 disabled:opacity-30 transition-colors"
-                >
-                  +
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={onBack} className={`${btnPixel} flex-1 text-sm`}>
-            Back
-          </button>
-          <button
-            onClick={handleConfirm}
-            disabled={!isComplete}
-            className={`${btnPixelPrimary} flex-1 text-sm`}
-          >
-            Continue
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── ETA Selection ──
-
-interface ETAModalProps {
-  isOpen: boolean;
-  onConfirm: (eta: string) => void;
-  onBack: () => void;
-}
+// Modals are mounted only while open (see app/page.tsx), so each one starts
+// with fresh state and none of them call hooks conditionally.
 
 const ETA_PRESETS = [
   { label: "15 minutes", value: "15m" },
@@ -159,51 +13,282 @@ const ETA_PRESETS = [
   { label: "Tomorrow", value: "tomorrow" },
 ];
 
-export function ETAModal({ isOpen, onConfirm, onBack }: ETAModalProps) {
-  if (!isOpen) return null;
-  const [selected, setSelected] = useState<string | null>(null);
+export function etaLabel(value: string) {
+  return ETA_PRESETS.find((p) => p.value === value)?.label ?? value;
+}
 
+/** Glasses are whole, except the half-glass Taster — which is why the stepper
+ *  needs a fractional step. With a step of 1 the Taster could never be fully
+ *  assigned and its Continue button stayed disabled forever. */
+function stepFor(glasses: number) {
+  return Number.isInteger(glasses) ? 1 : 0.5;
+}
+
+const fmt = (n: number) => (Number.isInteger(n) ? `${n}` : n.toFixed(1));
+
+// ── Shared chrome ────────────────────────────────────────────────────────────
+
+function Lemon({ className = "" }: { className?: string }) {
   return (
-    <div className={overlayStyle}>
-      <div className={cardStyle}>
-        <h2 className={titleStyle}>⏰ Pickup Time</h2>
-        <p className={subtitleStyle}>When will you swing by?</p>
+    <span
+      aria-hidden
+      className={`inline-block h-3 w-4 shrink-0 border-2 border-ink bg-lemon ${className}`}
+      style={{ boxShadow: "inset 1px 1px 0 0 #fff3b0" }}
+    />
+  );
+}
 
-        <div className="space-y-2 mb-4">
-          {ETA_PRESETS.map((preset) => (
-            <button
-              key={preset.value}
-              onClick={() => setSelected(preset.value)}
-              className={`w-full text-left p-3 border-2 transition-all font-mono ${
-                selected === preset.value
-                  ? borderPixelActive + " bg-amber-600 text-white"
-                  : "bg-stone-700 border-stone-600 text-stone-300 hover:border-amber-500"
-              }`}
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={onBack} className={`${btnPixel} flex-1 text-sm`}>Back</button>
-          <button
-            onClick={() => selected && onConfirm(selected)}
-            disabled={!selected}
-            className={`${btnPixelPrimary} flex-1 text-sm`}
+function Panel({
+  title, subtitle, children, wide = false,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-[#160e07]/85 p-4">
+      <div className={`panel panel-pop my-auto w-full ${wide ? "max-w-md" : "max-w-sm"}`}>
+        <div className="panel-header px-4 py-3">
+          <h2
+            className="flex items-center gap-2 text-[13px] leading-relaxed text-[#fff6dd]"
+            style={{ fontFamily: "var(--font-pixel)", textShadow: "2px 2px 0 #3a2718" }}
           >
-            Continue
-          </button>
+            <Lemon />
+            {title}
+          </h2>
+          {subtitle && (
+            <p className="mt-1.5 text-[11px] text-[#f5e6c8]/85">{subtitle}</p>
+          )}
         </div>
+        <div className="p-4">{children}</div>
       </div>
     </div>
   );
 }
 
-// ── Confirmation ──
+function Button({
+  children, onClick, disabled, variant = "wood", className = "",
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  variant?: "wood" | "lemon" | "leaf";
+  className?: string;
+}) {
+  const tone = {
+    wood: "bg-wood text-[#2b1c10]",
+    lemon: "bg-lemon text-[#4a3208]",
+    leaf: "bg-leaf text-white",
+  }[variant];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`pixel-btn ${tone} px-4 py-3 text-[10px] leading-none ${className}`}
+      style={{ fontFamily: "var(--font-pixel)" }}
+    >
+      {children}
+    </button>
+  );
+}
 
-interface ConfirmModalProps {
-  isOpen: boolean;
+// ── Package selection ────────────────────────────────────────────────────────
+
+export function PackageModal({
+  onSelect, onClose,
+}: {
+  onSelect: (pkg: PackageTier) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Panel title="THE MENU" subtitle="Small-batch gourmet lemonade, made to order.">
+      <div className="mb-4 space-y-2">
+        {PACKAGES.map((pkg) => (
+          <button
+            key={pkg.id}
+            type="button"
+            onClick={() => onSelect(pkg.id)}
+            className="pixel-card flex w-full items-center justify-between gap-3 bg-[#fffaf0] px-3 py-2.5 text-left"
+          >
+            <span className="flex items-center gap-2.5">
+              <Lemon />
+              <span>
+                <span
+                  className="block text-[10px] leading-none text-ink"
+                  style={{ fontFamily: "var(--font-pixel)" }}
+                >
+                  {pkg.name}
+                </span>
+                <span className="mt-1.5 block text-[11px] text-[#7a6244]">{pkg.label}</span>
+              </span>
+            </span>
+            <span
+              className="shrink-0 border-2 border-ink bg-lemon px-2 py-1 text-[11px] leading-none text-[#4a3208]"
+              style={{ fontFamily: "var(--font-pixel)" }}
+            >
+              ${pkg.price}
+            </span>
+          </button>
+        ))}
+      </div>
+      <Button onClick={onClose} className="w-full">Never mind</Button>
+    </Panel>
+  );
+}
+
+// ── Flavor assignment ────────────────────────────────────────────────────────
+
+export function FlavorModal({
+  glasses, onConfirm, onBack,
+}: {
+  glasses: number;
+  onConfirm: (assignments: FlavorAssignment[]) => void;
+  onBack: () => void;
+}) {
+  const [counts, setCounts] = useState<Record<string, number>>(
+    Object.fromEntries(FLAVORS.map((f) => [f, 0])),
+  );
+
+  const step = stepFor(glasses);
+  const assigned = Object.values(counts).reduce((sum, c) => sum + c, 0);
+  const remaining = Math.round((glasses - assigned) * 10) / 10;
+  const complete = remaining === 0;
+
+  const bump = (flavor: string, delta: number) =>
+    setCounts((prev) => ({
+      ...prev,
+      [flavor]: Math.round(Math.max(0, prev[flavor] + delta) * 10) / 10,
+    }));
+
+  return (
+    <Panel title="PICK FLAVORS" subtitle={`Split ${fmt(glasses)} glasses however you like.`}>
+      {/* A jar filling up, rather than a progress bar. */}
+      <div className="mb-2 h-5 border-[3px] border-ink bg-[#e6dcc4] p-0.5">
+        <div
+          className="h-full bg-lemon transition-[width] duration-150"
+          style={{
+            width: `${Math.min(100, (assigned / glasses) * 100)}%`,
+            boxShadow: "inset 0 3px 0 0 #fff3b0",
+          }}
+        />
+      </div>
+      <p className="mb-4 text-center text-[11px] text-[#7a6244]">
+        {complete
+          ? "All glasses assigned — nice."
+          : `${fmt(assigned)} of ${fmt(glasses)} assigned · ${fmt(remaining)} to go`}
+      </p>
+
+      <div className="mb-4 space-y-2">
+        {FLAVORS.map((flavor) => (
+          <div
+            key={flavor}
+            className="flex items-center justify-between gap-2 border-[3px] border-ink bg-[#fffaf0] px-3 py-2"
+          >
+            <span className="text-[12px] leading-snug text-ink">{flavor}</span>
+            <span className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={`Remove a glass of ${flavor}`}
+                onClick={() => bump(flavor, -step)}
+                disabled={counts[flavor] === 0}
+                className="pixel-btn h-8 w-8 bg-berry text-[12px] leading-none text-white"
+              >
+                −
+              </button>
+              <span
+                className="w-8 text-center text-[11px] text-ink"
+                style={{ fontFamily: "var(--font-pixel)" }}
+              >
+                {fmt(counts[flavor])}
+              </span>
+              <button
+                type="button"
+                aria-label={`Add a glass of ${flavor}`}
+                onClick={() => bump(flavor, step)}
+                disabled={remaining < step}
+                className="pixel-btn h-8 w-8 bg-leaf text-[12px] leading-none text-white"
+              >
+                +
+              </button>
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex gap-2">
+        <Button onClick={onBack} className="flex-1">Back</Button>
+        <Button
+          variant="lemon"
+          className="flex-1"
+          disabled={!complete}
+          onClick={() =>
+            onConfirm(
+              FLAVORS.filter((f) => counts[f] > 0).map((f) => ({
+                flavor: f as FlavorName,
+                glasses: counts[f],
+              })),
+            )
+          }
+        >
+          Next
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+// ── Pickup time ──────────────────────────────────────────────────────────────
+
+export function ETAModal({
+  onConfirm, onBack,
+}: {
+  onConfirm: (eta: string) => void;
+  onBack: () => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+
+  return (
+    <Panel title="PICKUP TIME" subtitle="When are you swinging by the stand?">
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        {ETA_PRESETS.map((preset) => (
+          <button
+            key={preset.value}
+            type="button"
+            data-selected={selected === preset.value}
+            onClick={() => setSelected(preset.value)}
+            className={`pixel-card px-3 py-3 text-[10px] leading-none ${
+              selected === preset.value
+                ? "bg-lemon text-[#4a3208]"
+                : "bg-[#fffaf0] text-ink"
+            }`}
+            style={{ fontFamily: "var(--font-pixel)" }}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <Button onClick={onBack} className="flex-1">Back</Button>
+        <Button
+          variant="lemon"
+          className="flex-1"
+          disabled={!selected}
+          onClick={() => selected && onConfirm(selected)}
+        >
+          Next
+        </Button>
+      </div>
+    </Panel>
+  );
+}
+
+// ── Confirmation ─────────────────────────────────────────────────────────────
+
+export function ConfirmModal({
+  pkg, flavors, eta, total, onSubmit, onBack, loading,
+}: {
   pkg: PackageTier;
   flavors: FlavorAssignment[];
   eta: string;
@@ -211,93 +296,96 @@ interface ConfirmModalProps {
   onSubmit: () => void;
   onBack: () => void;
   loading: boolean;
-}
-
-export function ConfirmModal({ isOpen, pkg, flavors, eta, total, onSubmit, onBack, loading }: ConfirmModalProps) {
-  if (!isOpen) return null;
-
-  const pkgInfo = PACKAGES.find((p) => p.id === pkg)!;
-  const etaLabel = ETA_PRESETS.find((p) => p.value === eta)?.label || eta;
+}) {
+  const info = PACKAGES.find((p) => p.id === pkg)!;
 
   return (
-    <div className={overlayStyle}>
-      <div className={cardStyle}>
-        <h2 className={titleStyle}>✅ Confirm Order</h2>
-        <p className={subtitleStyle}>Review your picks</p>
-
-        <div className="bg-stone-700 border-2 border-stone-600 p-3 mb-4 space-y-2 text-sm">
-          <div className="flex justify-between">
-            <span className="text-stone-400">Package</span>
-            <span className="text-white font-bold">{pkgInfo.name} ({pkgInfo.label})</span>
-          </div>
-
-          <div className="border-t-2 border-stone-600 pt-2">
-            <span className="text-stone-400 block mb-1">Flavors</span>
-            {flavors.map((f, i) => (
-              <div key={i} className="flex justify-between text-white">
-                <span>{f.flavor}</span>
-                <span className="text-stone-400 font-mono">{f.glasses} glass{f.glasses !== 1 ? "es" : ""}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="border-t-2 border-stone-600 pt-2 flex justify-between">
-            <span className="text-stone-400">Pickup</span>
-            <span className="text-white">{etaLabel}</span>
-          </div>
-
-          <div className="border-t-2 border-amber-600 pt-2 flex justify-between">
-            <span className="text-stone-400">Total</span>
-            <span className="text-amber-400 font-bold text-lg">${total}.00</span>
-          </div>
+    <Panel title="YOUR ORDER" subtitle="Give it a last look before it hits the stand.">
+      <dl className="mb-4 space-y-2 border-[3px] border-ink bg-[#fffaf0] p-3 text-[12px] text-ink">
+        <div className="flex justify-between gap-3">
+          <dt className="text-[#7a6244]">Package</dt>
+          <dd className="text-right font-semibold">{info.name} · {info.label}</dd>
         </div>
-
-        <div className="flex gap-2">
-          <button onClick={onBack} disabled={loading} className={`${btnPixel} flex-1 text-sm`}>
-            Back
-          </button>
-          <button onClick={onSubmit} disabled={loading} className={`${btnPixelPrimary} flex-1 text-sm`}>
-            {loading ? "Placing..." : "Place Order"}
-          </button>
+        <div className="border-t-2 border-dashed border-[#d5c6a8] pt-2">
+          <dt className="mb-1 text-[#7a6244]">Flavors</dt>
+          {flavors.map((f) => (
+            <dd key={f.flavor} className="flex justify-between gap-3">
+              <span>{f.flavor}</span>
+              <span className="shrink-0 text-[#7a6244]">
+                {fmt(f.glasses)} glass{f.glasses === 1 ? "" : "es"}
+              </span>
+            </dd>
+          ))}
         </div>
+        <div className="flex justify-between gap-3 border-t-2 border-dashed border-[#d5c6a8] pt-2">
+          <dt className="text-[#7a6244]">Pickup</dt>
+          <dd className="font-semibold">{etaLabel(eta)}</dd>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t-[3px] border-ink pt-2">
+          <dt className="text-[#7a6244]">Total</dt>
+          <dd
+            className="border-2 border-ink bg-lemon px-2 py-1 text-[12px] leading-none text-[#4a3208]"
+            style={{ fontFamily: "var(--font-pixel)" }}
+          >
+            ${total}.00
+          </dd>
+        </div>
+      </dl>
+
+      <div className="flex gap-2">
+        <Button onClick={onBack} disabled={loading} className="flex-1">Back</Button>
+        <Button variant="leaf" className="flex-1" disabled={loading} onClick={onSubmit}>
+          {loading ? "Sending…" : "Place order"}
+        </Button>
       </div>
-    </div>
+    </Panel>
   );
 }
 
-// ── Success / Full Reset ──
+// ── Success ──────────────────────────────────────────────────────────────────
 
-interface SuccessModalProps {
-  isOpen: boolean;
+export function SuccessModal({
+  orderId, eta, onDone,
+}: {
   orderId: string;
   eta: string;
   onDone: () => void;
-}
-
-export function SuccessModal({ isOpen, orderId, eta, onDone }: SuccessModalProps) {
-  if (!isOpen) return null;
-
-  const etaLabel = ETA_PRESETS.find((p) => p.value === eta)?.label || eta;
-
+}) {
   return (
-    <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
-      <div className={`bg-stone-800 border-4 border-green-500 shadow-[4px_4px_0px_0px_rgba(0,80,0,0.8)] rounded-sm p-8 w-full max-w-sm text-center`}>
-        <div className="text-6xl mb-4 animate-bounce">🍋</div>
-        <h2 className="text-2xl font-bold text-green-400 font-mono mb-2">Order Placed!</h2>
-        <p className="text-stone-400 text-xs font-mono mb-1">{orderId}</p>
-        <p className="text-stone-300 text-sm mb-6">
-          Ready at{" "}
-          <span className="text-amber-400 font-bold">{etaLabel}</span>
-        </p>
-        <p className="text-stone-500 text-xs mb-4">
-          This session will now reset. Your code has been used.
-        </p>
-        <button
-          onClick={onDone}
-          className="w-full bg-green-600 text-white font-bold py-3 border-2 border-green-700 shadow-[3px_3px_0px_0px_rgba(0,60,0,0.6)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
-        >
-          Close & Reset
-        </button>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#160e07]/92 p-4">
+      <div className="panel panel-pop w-full max-w-sm text-center">
+        <div className="panel-header px-4 py-3">
+          <h2
+            className="text-[13px] leading-relaxed text-[#fff6dd]"
+            style={{ fontFamily: "var(--font-pixel)", textShadow: "2px 2px 0 #3a2718" }}
+          >
+            ORDER PLACED!
+          </h2>
+        </div>
+        <div className="p-6">
+          <div className="mb-4 flex justify-center gap-1.5">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="inline-block h-6 w-8 border-[3px] border-ink bg-lemon"
+                style={{
+                  boxShadow: "inset 2px 2px 0 0 #fff3b0",
+                  animation: `panel-pop 260ms steps(4) ${i * 90}ms both`,
+                }}
+              />
+            ))}
+          </div>
+          <p className="mb-1 text-[12px] text-ink">
+            Ready in <span className="font-bold">{etaLabel(eta)}</span>
+          </p>
+          <p className="mb-5 font-mono text-[11px] text-[#7a6244]">{orderId}</p>
+          <p className="mb-5 text-[11px] text-[#7a6244]">
+            The stand has your order. This session resets now.
+          </p>
+          <Button variant="leaf" onClick={onDone} className="w-full">
+            Back to the stand
+          </Button>
+        </div>
       </div>
     </div>
   );

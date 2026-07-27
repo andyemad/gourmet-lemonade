@@ -3,17 +3,109 @@
 @theme inline {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* The scene's palette, so the HTML menus and the canvas share one colour set. */
+  --color-ink: #3a2718;
+  --color-wood: #c08a4e;
+  --color-wood-dark: #8f6335;
+  --color-wood-deep: #5c3a1c;
+  --color-parch: #f0e6d2;
+  --color-parch-dim: #ddcfb0;
+  --color-lemon: #ffd95c;
+  --color-lemon-dark: #e0aa2e;
+  --color-berry: #c94f4f;
+  --color-leaf: #4a8c44;
 }
 
-/* Prevent zoom on mobile inputs */
 html, body {
   overscroll-behavior: none;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Ensure canvas scales properly on mobile */
 canvas {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+}
+
+/* KAPLAY assigns the canvas a fixed pixel size via `style.cssText`, which
+   replaces every inline style on the element — including anything React set.
+   These have to be !important to survive that and let the canvas scale down
+   to a phone instead of overflowing the viewport. */
+.game-canvas {
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+  aspect-ratio: 4 / 3;
+  touch-action: manipulation !important;
+}
+
+/* ── In-game menu chrome ───────────────────────────────────────────────────
+   The order flow stays in HTML so the text is readable and selectable on a
+   phone, but the chrome is built to match the canvas: chunky ink outline,
+   wooden frame, parchment face, hard offset shadows and no soft gradients. */
+
+.panel {
+  background: var(--color-parch);
+  border: 3px solid var(--color-ink);
+  box-shadow:
+    0 0 0 4px var(--color-wood-dark),
+    0 0 0 7px var(--color-ink),
+    0 9px 0 0 rgba(0, 0, 0, 0.35),
+    0 18px 42px rgba(0, 0, 0, 0.55);
+  image-rendering: pixelated;
+}
+
+/* Plank seams across the header band. */
+.panel-header {
+  background:
+    repeating-linear-gradient(
+      180deg,
+      var(--color-wood) 0 7px,
+      var(--color-wood-dark) 7px 8px
+    );
+  border-bottom: 3px solid var(--color-ink);
+}
+
+.pixel-btn {
+  border: 3px solid var(--color-ink);
+  box-shadow: 0 4px 0 0 var(--color-ink);
+  transition: transform 60ms steps(2), box-shadow 60ms steps(2);
+}
+.pixel-btn:active:not(:disabled) {
+  transform: translateY(4px);
+  box-shadow: 0 0 0 0 var(--color-ink);
+}
+.pixel-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pixel-card {
+  border: 3px solid var(--color-ink);
+  box-shadow: 0 4px 0 0 rgba(58, 39, 24, 0.4);
+  transition: transform 80ms steps(2), box-shadow 80ms steps(2);
+}
+.pixel-card[data-selected="true"] {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 0 0 var(--color-lemon-dark);
+}
+/* Gated on a real pointer: on touch, :hover sticks to the last tapped card. */
+@media (hover: hover) {
+  .pixel-card:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 0 0 var(--color-lemon-dark);
+  }
+}
+
+@keyframes panel-pop {
+  0%   { transform: translateY(10px) scale(0.94); opacity: 0; }
+  60%  { transform: translateY(0) scale(1.02); opacity: 1; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+.panel-pop { animation: panel-pop 180ms steps(4) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .panel-pop { animation: none; }
+  .pixel-btn, .pixel-card { transition: none; }
 }
