@@ -1,15 +1,34 @@
 // KV store wrapper — uses Vercel KV in production, in-memory Map in development.
 
 interface KvEntry {
-  value: any;
+  value: unknown;
   expiresAt: number | null;
 }
 
-class DevKVStore {
-  private store = new Map<string, KvEntry>();
-  private lists = new Map<string, any[]>();
+interface KvPipeline {
+  set(key: string, value: unknown, opts?: { ex?: number }): KvPipeline;
+  get(key: string): KvPipeline;
+  exec(): Promise<unknown[]>;
+}
 
-  async get<T = any>(key: string): Promise<T | null> {
+interface KvClient {
+  get<T = unknown>(key: string): Promise<T | null>;
+  set(key: string, value: unknown, opts?: { ex?: number }): Promise<unknown>;
+  lpush(key: string, ...values: unknown[]): Promise<number>;
+  lrange(key: string, start: number, stop: number): Promise<string[]>;
+  mget<T = unknown>(...keys: string[]): Promise<(T | null)[]>;
+  pipeline(): KvPipeline;
+}
+
+type PipelineOperation =
+  | { cmd: "set"; key: string; value: unknown; opts?: { ex?: number } }
+  | { cmd: "get"; key: string };
+
+class DevKVStore implements KvClient {
+  private store = new Map<string, KvEntry>();
+  private lists = new Map<string, unknown[]>();
+
+  async get<T = unknown>(key: string): Promise<T | null> {
     const entry = this.store.get(key);
     if (!entry) return null;
     if (entry.expiresAt && Date.now() > entry.expiresAt) {
@@ -19,7 +38,7 @@ class DevKVStore {
     return entry.value as T;
   }
 
-  async set(key: string, value: any, opts?: { ex?: number }): Promise<string> {
+  async set(key: string, value: unknown, opts?: { ex?: number }): Promise<string> {
     this.store.set(key, {
       value,
       expiresAt: opts?.ex ? Date.now() + opts.ex * 1000 : null,
@@ -27,7 +46,7 @@ class DevKVStore {
     return "OK";
   }
 
-  async lpush(key: string, ...values: any[]): Promise<number> {
+  async lpush(key: string, ...values: unknown[]): Promise<number> {
     if (!this.lists.has(key)) this.lists.set(key, []);
     const list = this.lists.get(key)!;
     list.unshift(...values);
@@ -37,80 +56,81 @@ class DevKVStore {
   async lrange(key: string, start: number, stop: number): Promise<string[]> {
     const list = this.lists.get(key) || [];
     const end = stop === -1 ? list.length : stop + 1;
-    return list.slice(start, end);
+    return list.slice(start, end) as string[];
   }
 
-  async mget<T = any>(...keys: string[]): Promise<(T | null)[]> {
-    return Promise.all(keys.map((k) => this.get<T>(k)));
+  async mget<T = unknown>(...keys: string[]): Promise<(T | null)[]> {
+    return Promise.all(keys.map((key) => this.get<T>(key)));
   }
 
-  pipeline() {
-    const ops: { cmd: string; args: any[] }[] = [];
-    const self = this;
-    return {
-      set(key: string, value: any, opts?: { ex?: number }) {
-        ops.push({ cmd: "set", args: [key, value, opts] });
-        return this as any;
+  pipeline(): KvPipeline {
+    const operations: PipelineOperation[] = [];
+    const runSet = this.set.bind(this);
+    const runGet = this.get.bind(this);
+    const pipeline: KvPipeline = {
+      set(key, value, opts) {
+        operations.push({ cmd: "set", key, value, opts });
+        return pipeline;
       },
-      get(key: string) {
-        ops.push({ cmd: "get", args: [key] });
-        return this as any;
+      get(key) {
+        operations.push({ cmd: "get", key });
+        return pipeline;
       },
-      async exec(): Promise<any[]> {
-        const results: any[] = [];
-        for (const op of ops) {
-          if (op.cmd === "set") {
-            await self.set(op.args[0], op.args[1], op.args[2]);
+      async exec() {
+        const results: unknown[] = [];
+        for (const operation of operations) {
+          if (operation.cmd === "set") {
+            await runSet(operation.key, operation.value, operation.opts);
             results.push("OK");
-          } else if (op.cmd === "get") {
-            results.push(await self.get(op.args[0]));
+          } else {
+            results.push(await runGet(operation.key));
           }
         }
         return results;
       },
     };
+    return pipeline;
   }
 }
 
-// Singleton instance
 const devStore = new DevKVStore();
+let resolvedKv: KvClient | null = null;
 
-// Import real KV if configured, otherwise use dev store
-let _kv: any = null;
-
-async function resolveKv(): Promise<any> {
-  if (_kv) return _kv;
+async function resolveKv(): Promise<KvClient> {
+  if (resolvedKv) return resolvedKv;
 
   if (process.env.KV_URL || process.env.KV_REST_API_URL) {
     try {
       const mod = await import("@vercel/kv");
-      _kv = mod.kv;
-      return _kv;
+      resolvedKv = mod.kv as unknown as KvClient;
+      return resolvedKv;
     } catch {
-      // Fall through to dev store
+      // Fall through to the in-memory development store.
     }
   }
 
   console.warn("[dev] Using in-memory KV — orders reset on restart");
-  _kv = devStore;
-  return _kv;
+  resolvedKv = devStore;
+  return resolvedKv;
 }
 
-// Eager init for simplicity (won't fail if @vercel/kv is missing)
-resolveKv();
+// Begin resolution eagerly so synchronous methods such as pipeline() are ready
+// by the time a request reaches the order store.
+void resolveKv();
 
-// Export a proxy that delegates to the resolved store
-export const kv = new Proxy({} as any, {
-  get(_target, prop: string) {
-    if (!_kv) {
-      // Return async functions that resolve KV first
-      return (...args: any[]) =>
-        resolveKv().then((real) => real[prop](...args));
+type DynamicMethod = (...args: unknown[]) => unknown;
+
+export const kv = new Proxy({} as KvClient, {
+  get(_target, prop: string | symbol) {
+    if (!resolvedKv) {
+      return (...args: unknown[]) =>
+        resolveKv().then((client) => {
+          const member = client[prop as keyof KvClient];
+          return (member as DynamicMethod).apply(client, args);
+        });
     }
-    const val = _kv[prop];
-    if (typeof val === "function") {
-      return val.bind(_kv);
-    }
-    return val;
+
+    const member = resolvedKv[prop as keyof KvClient];
+    return typeof member === "function" ? member.bind(resolvedKv) : member;
   },
 });

@@ -4,7 +4,7 @@ import { saveOrder } from "@/lib/orders";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { code, package: pkg, flavors, eta } = body;
+    const { code, package: pkg, quantity, flavors, eta } = body;
 
     if (!code || !pkg || !flavors || !eta) {
       return NextResponse.json(
@@ -20,7 +20,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const order = await saveOrder({ code, package: pkg, flavors, eta });
+    if (typeof eta !== "string" || eta.length > 100) {
+      return NextResponse.json({ error: "Invalid pickup time" }, { status: 400 });
+    }
+
+    const order = await saveOrder({ code, package: pkg, quantity, flavors, eta });
 
     return NextResponse.json({ success: true, orderId: order.id });
   } catch (err) {

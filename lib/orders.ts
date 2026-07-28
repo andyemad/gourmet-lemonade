@@ -1,20 +1,21 @@
 import { kv } from "./kv";
 import type { Order, PackageTier, FlavorAssignment } from "./types";
-import { PACKAGES } from "./types";
+import { getPackageInfo } from "./types";
 
 export async function saveOrder(params: {
   code: string;
   package: PackageTier;
+  quantity?: number;
   flavors: FlavorAssignment[];
   eta: string;
 }): Promise<Order> {
-  const pkg = PACKAGES.find((p) => p.id === params.package);
-  if (!pkg) throw new Error(`Invalid package: ${params.package}`);
+  const pkg = getPackageInfo(params.package, params.quantity);
 
   const order: Order = {
     id: `ORD-${Date.now().toString(36).toUpperCase()}`,
     code: params.code,
     package: params.package,
+    quantity: pkg.quantity,
     flavors: params.flavors,
     eta: params.eta,
     total: pkg.price,

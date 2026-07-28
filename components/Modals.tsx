@@ -1,25 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { PACKAGES, FLAVORS, type PackageTier, type FlavorName, type FlavorAssignment } from "@/lib/types";
+import {
+  BATCH_PRICE,
+  ETA_PRESETS,
+  FLAVORS,
+  MAX_CUSTOM_QUANTITY,
+  PACKAGES,
+  etaLabel,
+  getPackageInfo,
+  type FlavorAssignment,
+  type FlavorName,
+  type PackageInfo,
+} from "@/lib/types";
 
 // Modals are mounted only while open (see app/page.tsx), so each one starts
 // with fresh state and none of them call hooks conditionally.
 
-const ETA_PRESETS = [
-  { label: "15 minutes", value: "15m" },
-  { label: "30 minutes", value: "30m" },
-  { label: "1 hour", value: "1h" },
-  { label: "Tomorrow", value: "tomorrow" },
-];
-
-export function etaLabel(value: string) {
-  return ETA_PRESETS.find((p) => p.value === value)?.label ?? value;
-}
-
-/** Glasses are whole, except the half-glass Taster — which is why the stepper
- *  needs a fractional step. With a step of 1 the Taster could never be fully
- *  assigned and its Continue button stayed disabled forever. */
+/** Keep flavor allocation compatible with any future fractional serving tier. */
 function stepFor(glasses: number) {
   return Number.isInteger(glasses) ? 1 : 0.5;
 }
@@ -99,17 +97,24 @@ function Button({
 export function PackageModal({
   onSelect, onClose,
 }: {
-  onSelect: (pkg: PackageTier) => void;
+  onSelect: (pkg: PackageInfo) => void;
   onClose: () => void;
 }) {
+  const [customQuantity, setCustomQuantity] = useState("");
+  const parsedQuantity = Number(customQuantity);
+  const customIsValid =
+    Number.isInteger(parsedQuantity) &&
+    parsedQuantity >= 1 &&
+    parsedQuantity <= MAX_CUSTOM_QUANTITY;
+
   return (
-    <Panel title="THE MENU" subtitle="Small-batch gourmet lemonade, made to order.">
+    <Panel title="THE MENU" subtitle="Each batch serves 7 glasses. Choose a quantity.">
       <div className="mb-4 space-y-2">
         {PACKAGES.map((pkg) => (
           <button
             key={pkg.id}
             type="button"
-            onClick={() => onSelect(pkg.id)}
+            onClick={() => onSelect(pkg)}
             className="pixel-card flex w-full items-center justify-between gap-3 bg-[#fffaf0] px-3 py-2.5 text-left"
           >
             <span className="flex items-center gap-2.5">
@@ -132,6 +137,44 @@ export function PackageModal({
             </span>
           </button>
         ))}
+
+        <div className="border-[3px] border-ink bg-[#fffaf0] p-3">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <label
+              htmlFor="custom-quantity"
+              className="text-[10px] leading-none text-ink"
+              style={{ fontFamily: "var(--font-pixel)" }}
+            >
+              CUSTOM QUANTITY
+            </label>
+            <span className="text-[11px] text-[#7a6244]">${BATCH_PRICE} each</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              id="custom-quantity"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_CUSTOM_QUANTITY}
+              step={1}
+              value={customQuantity}
+              onChange={(event) => setCustomQuantity(event.target.value)}
+              placeholder="5"
+              aria-label="Custom batch quantity"
+              className="min-w-0 flex-1 border-[3px] border-ink bg-white px-3 py-2 text-[12px] text-ink outline-none focus:bg-[#fff8cf]"
+            />
+            <Button
+              variant="lemon"
+              disabled={!customIsValid}
+              onClick={() => onSelect(getPackageInfo("custom", parsedQuantity))}
+            >
+              {customIsValid ? `$${parsedQuantity * BATCH_PRICE}` : "Select"}
+            </Button>
+          </div>
+          <p className="mt-2 text-[10px] text-[#7a6244]">
+            Enter 1–{MAX_CUSTOM_QUANTITY} batches.
+          </p>
+        </div>
       </div>
       <Button onClick={onClose} className="w-full">Never mind</Button>
     </Panel>
@@ -248,6 +291,9 @@ export function ETAModal({
   onBack: () => void;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [customTime, setCustomTime] = useState("");
+  const customSelected = selected === "custom";
+  const canContinue = Boolean(selected) && (!customSelected || Boolean(customTime.trim()));
 
   return (
     <Panel title="PICKUP TIME" subtitle="When are you swinging by the stand?">
@@ -268,14 +314,44 @@ export function ETAModal({
             {preset.label}
           </button>
         ))}
+        <button
+          type="button"
+          data-selected={customSelected}
+          onClick={() => setSelected("custom")}
+          className={`pixel-card px-3 py-3 text-[10px] leading-none ${
+            customSelected ? "bg-lemon text-[#4a3208]" : "bg-[#fffaf0] text-ink"
+          }`}
+          style={{ fontFamily: "var(--font-pixel)" }}
+        >
+          Custom
+        </button>
       </div>
+      {customSelected && (
+        <div className="mb-4 border-[3px] border-ink bg-[#fffaf0] p-3">
+          <label htmlFor="custom-time" className="mb-2 block text-[11px] text-[#7a6244]">
+            Tell us your pickup time
+          </label>
+          <input
+            id="custom-time"
+            type="text"
+            value={customTime}
+            onChange={(event) => setCustomTime(event.target.value)}
+            maxLength={80}
+            placeholder="Example: Around 2:30 PM"
+            autoFocus
+            className="w-full border-[3px] border-ink bg-white px-3 py-2 text-[12px] text-ink outline-none focus:bg-[#fff8cf]"
+          />
+        </div>
+      )}
       <div className="flex gap-2">
         <Button onClick={onBack} className="flex-1">Back</Button>
         <Button
           variant="lemon"
           className="flex-1"
-          disabled={!selected}
-          onClick={() => selected && onConfirm(selected)}
+          disabled={!canContinue}
+          onClick={() =>
+            selected && onConfirm(customSelected ? `custom:${customTime.trim()}` : selected)
+          }
         >
           Next
         </Button>
@@ -289,7 +365,7 @@ export function ETAModal({
 export function ConfirmModal({
   pkg, flavors, eta, total, onSubmit, onBack, loading,
 }: {
-  pkg: PackageTier;
+  pkg: PackageInfo;
   flavors: FlavorAssignment[];
   eta: string;
   total: number;
@@ -297,14 +373,14 @@ export function ConfirmModal({
   onBack: () => void;
   loading: boolean;
 }) {
-  const info = PACKAGES.find((p) => p.id === pkg)!;
-
   return (
     <Panel title="YOUR ORDER" subtitle="Give it a last look before it hits the stand.">
       <dl className="mb-4 space-y-2 border-[3px] border-ink bg-[#fffaf0] p-3 text-[12px] text-ink">
         <div className="flex justify-between gap-3">
           <dt className="text-[#7a6244]">Package</dt>
-          <dd className="text-right font-semibold">{info.name} · {info.label}</dd>
+          <dd className="text-right font-semibold">
+            {pkg.name} · {pkg.quantity} batch{pkg.quantity === 1 ? "" : "es"} · {pkg.label}
+          </dd>
         </div>
         <div className="border-t-2 border-dashed border-[#d5c6a8] pt-2">
           <dt className="mb-1 text-[#7a6244]">Flavors</dt>

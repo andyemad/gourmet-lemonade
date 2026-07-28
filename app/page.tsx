@@ -9,8 +9,7 @@ import {
   ConfirmModal,
   SuccessModal,
 } from "@/components/Modals";
-import type { PackageTier, FlavorAssignment } from "@/lib/types";
-import { PACKAGES } from "@/lib/types";
+import type { PackageInfo, FlavorAssignment } from "@/lib/types";
 import { playClick, playConfirm, playSuccess, playError } from "@/lib/sounds";
 
 type Step = "game" | "package" | "flavor" | "eta" | "confirm" | "success";
@@ -28,7 +27,7 @@ function sessionId(): string {
 
 export default function Home() {
   const [step, setStep] = useState<Step>("game");
-  const [selectedPkg, setSelectedPkg] = useState<PackageTier | null>(null);
+  const [selectedPkg, setSelectedPkg] = useState<PackageInfo | null>(null);
   const [flavors, setFlavors] = useState<FlavorAssignment[]>([]);
   const [eta, setEta] = useState<string>("");
   const [orderId, setOrderId] = useState<string>("");
@@ -43,7 +42,7 @@ export default function Home() {
     return () => window.removeEventListener("open-package-modal", handler);
   }, []);
 
-  const handleSelectPackage = useCallback((pkg: PackageTier) => {
+  const handleSelectPackage = useCallback((pkg: PackageInfo) => {
     playClick();
     setSelectedPkg(pkg);
     setStep("flavor");
@@ -69,7 +68,13 @@ export default function Home() {
       const res = await fetch("/api/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: sessionId(), package: selectedPkg, flavors, eta }),
+        body: JSON.stringify({
+          code: sessionId(),
+          package: selectedPkg.id,
+          quantity: selectedPkg.quantity,
+          flavors,
+          eta,
+        }),
       });
       const data = await res.json();
 
@@ -100,7 +105,7 @@ export default function Home() {
     setLoading(false);
   }, []);
 
-  const pkg = selectedPkg ? PACKAGES.find((p) => p.id === selectedPkg)! : null;
+  const pkg = selectedPkg;
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#1b1410] p-4">
@@ -136,7 +141,7 @@ export default function Home() {
 
       {step === "confirm" && pkg && (
         <ConfirmModal
-          pkg={pkg.id}
+          pkg={pkg}
           flavors={flavors}
           eta={eta}
           total={pkg.price}

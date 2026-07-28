@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { PACKAGES } from "@/lib/types";
+import { etaLabel, getPackageInfo } from "@/lib/types";
 import type { Order } from "@/lib/types";
 
 export default function AdminPage() {
@@ -19,9 +19,12 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    fetchOrders();
+    const initialFetch = setTimeout(fetchOrders, 0);
     const interval = setInterval(fetchOrders, 5000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initialFetch);
+      clearInterval(interval);
+    };
   }, [fetchOrders]);
 
   // Sound alert on new orders
@@ -72,7 +75,13 @@ export default function AdminPage() {
     }
   };
 
-  const getPkgName = (id: string) => PACKAGES.find((p) => p.id === id)?.name || id;
+  const getPkgName = (order: Order) => {
+    try {
+      return getPackageInfo(order.package, order.quantity).name;
+    } catch {
+      return order.package;
+    }
+  };
 
   return (
     <main className="min-h-screen bg-stone-900 p-4 md:p-8">
@@ -120,12 +129,12 @@ export default function AdminPage() {
                   <div className="flex-1">
                     <p className="text-stone-400 text-xs mb-1">Package</p>
                     <p className="text-white text-sm">
-                      {getPkgName(order.package)} — ${order.total}
+                      {getPkgName(order)} · {order.quantity || 1} batch{order.quantity === 1 ? "" : "es"} — ${order.total}
                     </p>
                   </div>
                   <div className="flex-1">
                     <p className="text-stone-400 text-xs mb-1">ETA</p>
-                    <p className="text-white text-sm">{order.eta}</p>
+                    <p className="text-white text-sm">{etaLabel(order.eta)}</p>
                   </div>
                 </div>
 
